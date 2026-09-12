@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.vsix
+coverage/
+.vitest/
+.vite/
+.nyc_output/
+package-lock.json

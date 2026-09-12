@@ -1,0 +1,13 @@
+test/**
+assets/icon-prompt.txt
+src/**
+build.cjs
+vitest.config.mjs
+eslint.config.mjs
+.gitignore
+.vscodeignore
+.prettierignore
+.prettierrc.json
+*.vsix
+package-lock.json
+node_modules/**

@@ -1,0 +1,1 @@
+NgRx Navigator icon: the original NgRx logo inside a circular magnifier with a handle angled down-right. The extension icon uses the original pink logo, a white lens, and a purple frame; the panel icon uses monochrome gray. Vector source: icon.svg. Render icon.png with rsvg-convert -o icon.png icon.svg. NgRx logo source: https://ngrx.io/ngrx-logo-pink.svg

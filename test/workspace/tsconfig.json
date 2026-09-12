@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "paths": {
+      "@ngrx/effects": ["./ngrx-effects.ts"],
+      "@ngrx/store": ["./ngrx-store.ts"]
+    }
+  },
+  "include": ["*.ts"]
+}

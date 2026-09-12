@@ -1,0 +1,121 @@
+{
+  "name": "ngrx-navigator",
+  "displayName": "NgRx Navigator",
+  "description": "Inspect NgRx events, selector dependencies, and reducers in separate tabs.",
+  "version": "0.7.20",
+  "publisher": "local-ngrx-tools",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ngrx",
+    "angular",
+    "actions",
+    "effects",
+    "reducers",
+    "navigation"
+  ],
+  "main": "./dist/extension.js",
+  "extensionDependencies": [
+    "vscode.typescript-language-features"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Event navigation requires the built-in TypeScript language service in a trusted workspace."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "ngrxNavigator.details",
+        "title": "Inspect Action",
+        "enablement": "editorLangId == typescript || editorLangId == typescriptreact",
+        "shortTitle": "Inspect Action"
+      },
+      {
+        "command": "ngrxNavigator.inspectSelector",
+        "title": "Inspect Selector",
+        "enablement": "editorLangId == typescript || editorLangId == typescriptreact"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ngrxNavigator.details",
+          "when": "editorLangId == typescript || editorLangId == typescriptreact",
+          "group": "navigation@8"
+        },
+        {
+          "command": "ngrxNavigator.inspectSelector",
+          "when": "editorLangId == typescript || editorLangId == typescriptreact",
+          "group": "navigation@9"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "NgRx Navigator",
+      "properties": {
+        "ngrxHandlers.includeTests": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include publishers and subscribers in .spec/.test files and test directories."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "ngrxNavigator.details",
+        "key": "ctrl+alt+n d",
+        "mac": "ctrl+alt+n d",
+        "when": "editorTextFocus && (editorLangId == typescript || editorLangId == typescriptreact)"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "ngrxEvents",
+          "title": "NgRx Navigator",
+          "icon": "assets/details.svg"
+        }
+      ]
+    },
+    "views": {
+      "ngrxEvents": [
+        {
+          "id": "ngrxNavigator.eventDetails",
+          "name": "NgRx Navigator",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "format": "eslint . --fix && prettier --write .",
+    "format:check": "eslint . && prettier --check .",
+    "build": "node build.cjs",
+    "vscode:prepublish": "npm run build",
+    "test": "vitest run --config vitest.config.mjs",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "dependencies": {
+    "typescript": "6.0.3"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "5.10.0",
+    "@typescript-eslint/parser": "8.70.0",
+    "@vscode/vsce": "^3.6.0",
+    "eslint": "10.10.0",
+    "prettier": "3.9.6",
+    "vitest": "^4.1.8"
+  },
+  "icon": "assets/icon.png"
+}

@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Generated extension build and packages
+/dist/
+*.vsix
+
+# Test output and caches
+coverage/
+.vitest/
+.vite/
+.nyc_output/
+*.tsbuildinfo
+
+# Local logs
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
