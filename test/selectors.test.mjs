@@ -1,5 +1,8 @@
-import { expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { expect, it, vi } from 'vitest';
+import vm from 'node:vm';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -7,7 +10,7 @@ const { inspectSelector } = require('../src/selectors');
 
 it('traces the collection selector through entity selectors to the correct reducers', () => {
   const source = readFileSync(
-    new URL('../../ngrx/projects/example-app/src/app/books/store/books.state.ts', import.meta.url),
+    new URL('./fixtures/example-app/books/store/books.state.ts', import.meta.url),
     'utf8',
   );
 
@@ -186,3 +189,219 @@ it.each(['selectUser, selectPermissions', '[selectUser, selectPermissions]'])(
     root.children.forEach(visit);
   },
 );
+
+it('reuses the compiler and invalidates it for edits, additions, and deletions', () => {
+  const ts = require('typescript');
+  const createProgram = vi.fn((...args) => ts.createProgram(...args));
+  const module = { exports: {} };
+
+  vm.runInNewContext(readFileSync(new URL('../src/selectors.js', import.meta.url), 'utf8'), {
+    module,
+    require: () => ({ ...ts, createProgram }),
+  });
+  const inspect = module.exports.inspectSelector;
+  const files = new Map([
+    ['/state.ts', "export const selected = createFeatureSelector('before');"],
+    ['/use.ts', "import { selected } from './state'; selected;"],
+  ]);
+
+  const run = () =>
+    inspect(new Map(files), '/use.ts', files.get('/use.ts').lastIndexOf('selected'));
+
+  expect(run().groups[1].children).toEqual([{ label: 'before' }]);
+  expect(run().groups[1].children).toEqual([{ label: 'before' }]);
+  expect(createProgram).toHaveBeenCalledTimes(1);
+
+  files.set('/state.ts', "export const selected = createFeatureSelector('after');");
+  expect(run().groups[1].children).toEqual([{ label: 'after' }]);
+  expect(createProgram).toHaveBeenCalledTimes(2);
+
+  files.set('/extra.ts', 'export const unrelated = 1;');
+  run();
+  expect(createProgram).toHaveBeenCalledTimes(3);
+
+  files.delete('/state.ts');
+  expect(run()).toBeUndefined();
+  expect(createProgram).toHaveBeenCalledTimes(4);
+});
+
+it('uses inherited project aliases for namespace selectors, imported projectors and computed reducer keys', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ngrx-selector-'));
+
+  try {
+    const project = join(directory, 'app');
+
+    mkdirSync(project);
+    writeFileSync(
+      join(directory, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: '.',
+          paths: { '@app/*': ['./app/*'] },
+        },
+      }),
+    );
+    writeFileSync(join(project, 'tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json' }));
+    const component = join(project, 'component.ts');
+    const files = new Map([
+      [component, "import * as auth from '@app/state'; auth.selectLoginPagePending;"],
+      [
+        join(project, 'state.ts'),
+        `
+        import * as login from '@app/login';
+        const feature = createFeatureSelector('auth');
+        const page = createSelector(feature, state => state.loginPage);
+        export const selectLoginPagePending = createSelector(page, login.getPending);
+        provideState('auth', combineReducers({ [login.key]: login.reducer }));
+      `,
+      ],
+      [
+        join(project, 'login.ts'),
+        `
+        export const key = 'loginPage';
+        export const getPending = state => state.pending;
+        export const reducer = createReducer({},
+          on(login, state => ({ ...state, pending: true })),
+          on(failure, state => ({ ...state, pending: false })),
+          on(errorOnly, state => ({ ...state, error: 'error' }))
+        );
+      `,
+      ],
+    ]);
+
+    const { selectorProject } = require('../src/selectors');
+    const config = selectorProject(component);
+
+    expect(config.directory).toBe(project);
+    const result = inspectSelector(
+      files,
+      component,
+      files.get(component).indexOf('selectLoginPagePending'),
+      config.options,
+    );
+
+    expect(result.groups[1].children).toEqual([{ label: 'auth.loginPage.pending' }]);
+    expect(result.groups[2].children[0].children.map((item) => item.label)).toEqual([
+      'on(login)',
+      'on(failure)',
+    ]);
+    expect(
+      inspectSelector(files, component, files.get(component).indexOf('selectLoginPagePending')),
+    ).toBeUndefined();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it.each([
+  'export const selectBookById = (id: string) => createSelector(selectEntities, entities => entities[id]);',
+  'export const selectBookById = (id: string) => { return createSelector(selectEntities, entities => entities[id]); };',
+  'export function selectBookById(id: string) { return createSelector(selectEntities, entities => entities[id]); }',
+  'export const selectBookById = function(id: string) { const selector = createSelector(selectEntities, entities => entities[id]); return selector; };',
+])(
+  'traces selector factories at declarations, imported calls, and composed inputs: %s',
+  (factory) => {
+    const source = `
+    const feature = createFeatureSelector('books');
+    const selectEntities = createSelector(feature, state => state.entities);
+    ${factory}
+    export const selectedBook = selectBookById('42');
+    export const selectTitle = createSelector(selectBookById('42'), book => book.title);
+    const reducer = createReducer({}, on(loaded, (state, { entities }) => ({ ...state, entities })));
+    provideState('books', reducer);
+  `;
+
+    const usage = "import { selectBookById as byId } from './state'; byId('42');";
+    const files = new Map([
+      ['/state.ts', source],
+      ['/use.ts', usage],
+    ]);
+
+    for (const [file, offset] of [
+      ['/state.ts', source.indexOf('selectBookById')],
+      ['/state.ts', source.indexOf('selectedBook')],
+      ['/state.ts', source.indexOf('selectTitle')],
+      ['/use.ts', usage.lastIndexOf('byId')],
+    ]) {
+      const result = inspectSelector(files, file, offset);
+
+      expect(result.groups[1].children).toEqual([{ label: 'books.entities' }]);
+      expect(result.groups[2].children[0].children[0].label).toBe('on(loaded)');
+      expect(JSON.stringify(result.groups[0])).toContain('selectEntities');
+      expect(result.groups[0].children[0].inspected).toBe(true);
+    }
+  },
+);
+
+it('rejects ordinary factories and terminates recursive factories', () => {
+  const source = `
+    const ordinary = (id: string) => id;
+    const recursive = (id: string) => recursive(id);
+  `;
+
+  const files = new Map([['/state.ts', source]]);
+
+  expect(inspectSelector(files, '/state.ts', source.indexOf('ordinary'))).toBeUndefined();
+  expect(inspectSelector(files, '/state.ts', source.indexOf('recursive'))).toBeUndefined();
+});
+
+it('lists navigable selector usages across imports, factories, and composed selectors', () => {
+  const state = `
+    export const selectQuery = createSelector(createFeatureSelector('search'), state => state.query);
+    export const selectById = (id: string) => createSelector(selectQuery, query => query[id]);
+  `;
+
+  const use = `
+    import * as search from './state';
+    import { selectQuery as query, selectById } from './state';
+    export { selectQuery } from './state';
+    type QuerySelector = typeof query;
+    this.searchQuery$ = store.select(search.selectQuery).pipe(take(1));
+    const signal = store.selectSignal(query);
+    const stream = store.pipe(select(query));
+    const composed = createSelector(query, value => value);
+    const book = store.select(selectById('42'));
+    function unrelated(query: unknown) { return store.select(query); }
+  `;
+
+  const files = new Map([
+    ['/state.ts', state],
+    ['/use.ts', use],
+  ]);
+
+  const offset = use.indexOf('selectQuery).pipe');
+  const result = inspectSelector(files, '/use.ts', offset);
+  const usages = result.groups.find((group) => group.label === 'Used by').children;
+
+  expect(usages).toHaveLength(5);
+  expect(usages.filter((item) => item.inspected)).toHaveLength(1);
+  expect(usages.find((item) => item.inspected).label).toBe(
+    'this.searchQuery$ = store.select(search.selectQuery).pipe(take(1));',
+  );
+  expect(
+    usages.every((item) =>
+      ['selectQuery', 'query'].includes(files.get(item.fileName).slice(item.start, item.end)),
+    ),
+  ).toBe(true);
+  expect(usages.some((item) => item.label.includes('store.selectSignal(query)'))).toBe(true);
+  expect(usages.some((item) => item.label.includes('store.pipe(select(query))'))).toBe(true);
+  const factory = inspectSelector(files, '/state.ts', state.indexOf('selectById'));
+
+  expect(factory.groups.find((group) => group.label === 'Used by').children).toEqual([
+    expect.objectContaining({
+      fileName: '/use.ts',
+      label: "const book = store.select(selectById('42'));",
+    }),
+  ]);
+});
+
+it('shows an empty usages group for an unused selector', () => {
+  const source = "export const unused = createFeatureSelector('unused');";
+  const result = inspectSelector(
+    new Map([['/state.ts', source]]),
+    '/state.ts',
+    source.indexOf('unused'),
+  );
+
+  expect(result.groups.find((group) => group.label === 'Used by').children).toEqual([]);
+});

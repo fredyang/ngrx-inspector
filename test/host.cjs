@@ -12,11 +12,11 @@ exports.run = async function () {
   assert.ok(commands.includes('ngrxNavigator.details'));
   assert.deepEqual(
     extension.packageJSON.contributes.menus['editor/context'].map((item) => item.command),
-    ['ngrxNavigator.details', 'ngrxNavigator.inspectSelector'],
+    ['ngrxNavigator.details'],
   );
   assert.ok(!commands.includes('ngrxHandlers.find'));
   assert.ok(!commands.includes('ngrxHandlers.peek'));
-  assert.equal(extension.packageJSON.displayName, 'NgRx Navigator');
+  assert.equal(extension.packageJSON.displayName, 'NgRx Inspector');
   assert.equal(extension.packageJSON.version, require('../package.json').version);
   assert.ok(commands.includes('ngrxNavigator.publishers'));
   const {
@@ -116,10 +116,7 @@ exports.run = async function () {
   details.dispose();
 
   const loginUri = vscode.Uri.file(
-    path.resolve(
-      __dirname,
-      '../../ngrx/projects/example-app/src/app/auth/components/login-page.component.ts',
-    ),
+    path.resolve(__dirname, './fixtures/example-app/auth/components/login-page.component.ts'),
   );
 
   const loginDocument = await vscode.workspace.openTextDocument(loginUri);
@@ -177,6 +174,6 @@ exports.run = async function () {
   assert.deepEqual(await findEventReferences(document, position, source.token), []);
   source.dispose();
   console.log(
-    'NgRx Navigator integration passed: combined command, grouped details, source navigation, empty group, subscribers, publishers, test toggle, unsaved edits, cancellation.',
+    'NgRx Inspector integration passed: combined command, grouped details, source navigation, empty group, subscribers, publishers, test toggle, unsaved edits, cancellation.',
   );
 };

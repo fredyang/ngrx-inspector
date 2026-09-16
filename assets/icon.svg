@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-<title>NgRx Navigator</title>
+<title>NgRx Inspector</title>
 <path d="m166 166 63 63" fill="none" stroke="#702080" stroke-width="26" stroke-linecap="round"/>
 <circle cx="105" cy="105" r="87" fill="white" stroke="#702080" stroke-width="16"/>
 <g transform="translate(46 43) scale(.118)">

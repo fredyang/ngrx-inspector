@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const { createClassifier } = require('../src/handlers');
 
 it('follows real add-book outputs to the rollback reducer and stops cycles', async () => {
-  const base = '../../ngrx/projects/example-app/src/app/books/store/';
+  const base = './fixtures/example-app/books/store/';
   const documents = Object.fromEntries(
     ['books.effects.ts', 'books.state.ts'].map((file) => {
       const text = readFileSync(new URL(base + file, import.meta.url), 'utf8');

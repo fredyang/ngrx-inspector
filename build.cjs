@@ -3,23 +3,8 @@ const path = require('node:path');
 const output = path.join(__dirname, 'dist');
 const typescript = path.dirname(require.resolve('typescript/package.json'));
 const manifestPath = path.join(__dirname, 'package.json');
-const lockPath = path.join(__dirname, 'package-lock.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-const versionParts = /^(\d+)\.(\d+)\.(\d+)$/.exec(manifest.version);
-
-if (!versionParts) {
-  throw new Error(`Cannot bump patch version: ${manifest.version}`);
-}
-
-const version = `${versionParts[1]}.${versionParts[2]}.${Number(versionParts[3]) + 1}`;
-
-manifest.version = version;
-lock.version = version;
-lock.packages[''].version = version;
-fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
-console.log(`Building NgRx Navigator ${version}`);
+console.log(`Building NgRx Inspector ${manifest.version}`);
 fs.mkdirSync(output, { recursive: true });
 fs.copyFileSync(path.join(__dirname, 'src/inspector.js'), path.join(output, 'inspector.js'));
 fs.copyFileSync(path.join(__dirname, 'src/metadata.js'), path.join(output, 'metadata.js'));

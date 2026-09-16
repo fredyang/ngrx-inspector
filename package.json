@@ -1,10 +1,18 @@
 {
-  "name": "ngrx-navigator",
-  "displayName": "NgRx Navigator",
+  "name": "ngrx-inspector",
+  "displayName": "NgRx Inspector",
   "description": "Inspect NgRx events, selector dependencies, and reducers in separate tabs.",
-  "version": "0.7.20",
-  "publisher": "local-ngrx-tools",
+  "version": "0.1.5",
+  "publisher": "fredyang",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fredyang/ngrx-inspector.git"
+  },
+  "homepage": "https://github.com/fredyang/ngrx-inspector#readme",
+  "bugs": {
+    "url": "https://github.com/fredyang/ngrx-inspector/issues"
+  },
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -15,6 +23,8 @@
   "keywords": [
     "ngrx",
     "angular",
+    "typescript",
+    "selectors",
     "actions",
     "effects",
     "reducers",
@@ -37,14 +47,9 @@
     "commands": [
       {
         "command": "ngrxNavigator.details",
-        "title": "Inspect Action",
+        "title": "Inspect NgRx",
         "enablement": "editorLangId == typescript || editorLangId == typescriptreact",
-        "shortTitle": "Inspect Action"
-      },
-      {
-        "command": "ngrxNavigator.inspectSelector",
-        "title": "Inspect Selector",
-        "enablement": "editorLangId == typescript || editorLangId == typescriptreact"
+        "shortTitle": "Inspect NgRx"
       }
     ],
     "menus": {
@@ -53,16 +58,11 @@
           "command": "ngrxNavigator.details",
           "when": "editorLangId == typescript || editorLangId == typescriptreact",
           "group": "navigation@8"
-        },
-        {
-          "command": "ngrxNavigator.inspectSelector",
-          "when": "editorLangId == typescript || editorLangId == typescriptreact",
-          "group": "navigation@9"
         }
       ]
     },
     "configuration": {
-      "title": "NgRx Navigator",
+      "title": "NgRx Inspector",
       "properties": {
         "ngrxHandlers.includeTests": {
           "type": "boolean",
@@ -74,8 +74,8 @@
     "keybindings": [
       {
         "command": "ngrxNavigator.details",
-        "key": "ctrl+alt+n d",
-        "mac": "ctrl+alt+n d",
+        "key": "ctrl+alt+n i",
+        "mac": "ctrl+cmd+n i",
         "when": "editorTextFocus && (editorLangId == typescript || editorLangId == typescriptreact)"
       }
     ],
@@ -83,7 +83,7 @@
       "panel": [
         {
           "id": "ngrxEvents",
-          "title": "NgRx Navigator",
+          "title": "NgRx Inspector",
           "icon": "assets/details.svg"
         }
       ]
@@ -92,7 +92,7 @@
       "ngrxEvents": [
         {
           "id": "ngrxNavigator.eventDetails",
-          "name": "NgRx Navigator",
+          "name": "NgRx Inspector",
           "type": "webview"
         }
       ]
@@ -104,7 +104,7 @@
     "build": "node build.cjs",
     "vscode:prepublish": "npm run build",
     "test": "vitest run --config vitest.config.mjs",
-    "package": "vsce package --no-dependencies --allow-missing-repository"
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "typescript": "6.0.3"

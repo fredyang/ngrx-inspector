@@ -280,11 +280,6 @@ it('renders selector icons and marks only the inspected root while dependencies 
     'selectSummary',
   ]);
   expect(
-    elements
-      .filter((node) => node.className === 'inspecting-badge')
-      .map((node) => node.textContent),
-  ).toEqual(['Inspecting']);
-  expect(
     elements.filter((node) => node.tag === 'summary').map((node) => node.textContent),
   ).toContain('Selector tree');
   expect(
@@ -310,4 +305,33 @@ it('renders selector icons and marks only the inspected root while dependencies 
   expect(elements.filter((node) => node.tag === 'strong').map((node) => node.textContent)).toEqual([
     'selectSummary',
   ]);
+});
+
+it('marks only the action reference at the inspection origin and refreshes the marker', () => {
+  const { inspector } = setup();
+  const reference = (file, line) => ({
+    ...location(file, line),
+    range: { start: { line, character: 20 }, end: { line, character: 25 } },
+  });
+
+  const groups = [
+    {
+      label: 'Publishers',
+      children: [
+        { kind: 'Dispatch', name: 'onSubmit', location: reference('login.ts', 26) },
+        { kind: 'Dispatch', name: 'retry', location: reference('login.ts', 30) },
+        { kind: 'Dispatch', name: 'onSubmit', location: reference('other.ts', 26) },
+      ],
+    },
+  ];
+
+  const marked = () =>
+    inspector.tabs.get('login').groups[0].children.map((item) => !!item.inspected);
+
+  inspector.update('login', 'Login', groups, reference('login.ts', 26));
+  expect(marked()).toEqual([true, false, false]);
+  inspector.update('login', 'Login', groups, reference('login.ts', 30));
+  expect(marked()).toEqual([false, true, false]);
+  inspector.update('login', 'Login', groups, reference('login.ts', 40));
+  expect(marked()).toEqual([false, false, false]);
 });

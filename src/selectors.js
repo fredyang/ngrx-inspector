@@ -1,8 +1,43 @@
 const ts = require('typescript');
 
-// Use compiler symbols so aliases and same-named exports stay distinct.
-function inspectSelector(files, fileName, offset) {
+// Keep only the latest workspace snapshot. Compare text, not Map identity, so
+// unsaved edits, additions, and deletions invalidate the compiler together.
+let cachedProgram;
+let cachedFiles;
+let cachedOptions;
+
+function selectorProject(fileName) {
+  const config = ts.findConfigFile(fileName.slice(0, fileName.lastIndexOf('/')), ts.sys.fileExists);
+
+  if (!config) {
+    return { options: {} };
+  }
+
+  const parsed = ts.getParsedCommandLineOfConfigFile(
+    config,
+    {},
+    {
+      ...ts.sys,
+      onUnRecoverableConfigFileDiagnostic: () => {},
+    },
+  );
+
+  return { directory: config.slice(0, config.lastIndexOf('/')), options: parsed?.options || {} };
+}
+
+function selectorProgram(files, compilerOptions) {
+  const optionsKey = JSON.stringify(compilerOptions);
+
+  if (
+    cachedOptions === optionsKey &&
+    cachedFiles?.size === files.size &&
+    [...files].every(([name, text]) => cachedFiles.get(name) === text)
+  ) {
+    return cachedProgram;
+  }
+
   const options = {
+    ...compilerOptions,
     target: ts.ScriptTarget.Latest,
     module: ts.ModuleKind.CommonJS,
     moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -23,6 +58,17 @@ function inspectSelector(files, fileName, offset) {
   };
 
   const program = ts.createProgram([...files.keys()], options, host);
+
+  cachedOptions = optionsKey;
+  cachedFiles = new Map(files);
+  cachedProgram = program;
+
+  return program;
+}
+
+// Use compiler symbols so aliases and same-named exports stay distinct.
+function inspectSelector(files, fileName, offset, compilerOptions = {}) {
+  const program = selectorProgram(files, compilerOptions);
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(fileName);
 
@@ -87,6 +133,61 @@ function inspectSelector(files, fileName, offset) {
   const callName = (node) =>
     ts.isCallExpression(node) ? node.expression.getText().split('.').pop() : '';
 
+  // Follow factory returns without executing parameter-dependent code.
+  const selectorValue = (node, seen = new Set()) => {
+    node = value(node);
+
+    if (!node || seen.has(node)) {
+      return undefined;
+    }
+
+    const branch = new Set(seen).add(node);
+
+    if (
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isFunctionDeclaration(node)
+    ) {
+      if (!node.body) {
+        return undefined;
+      }
+
+      if (!ts.isBlock(node.body)) {
+        return selectorValue(node.body, branch);
+      }
+
+      const returns = [];
+      const visit = (child) => {
+        if (ts.isFunctionLike(child)) {
+          return;
+        }
+
+        if (ts.isReturnStatement(child)) {
+          returns.push(child.expression);
+        } else {
+          ts.forEachChild(child, visit);
+        }
+      };
+
+      visit(node.body);
+
+      return returns.length === 1 ? selectorValue(returns[0], branch) : undefined;
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      !['createSelector', 'createFeatureSelector', 'getSelectors'].includes(callName(node))
+    ) {
+      const target = value(node.expression);
+
+      if (target !== node.expression) {
+        return selectorValue(target, branch);
+      }
+    }
+
+    return node;
+  };
+
   const location = (node) => ({
     fileName: node.getSourceFile().fileName,
     start: node.getStart(),
@@ -95,7 +196,10 @@ function inspectSelector(files, fileName, offset) {
 
   const property = (node, name) =>
     node.properties?.find(
-      (propertyNode) => propertyNode.name?.getText().replace(/['"]/g, '') === name,
+      (propertyNode) =>
+        (propertyNode.name && ts.isComputedPropertyName(propertyNode.name)
+          ? literal(propertyNode.name.expression)
+          : propertyNode.name?.getText().replace(/['"]/g, '')) === name,
     );
 
   const propertyValue = (propertyNode) =>
@@ -157,13 +261,15 @@ function inspectSelector(files, fileName, offset) {
     }
 
     const branch = new Set(ancestors).add(declarationNode);
-    let initializer = declarationNode.initializer;
+    let initializer = ts.isFunctionDeclaration(declarationNode)
+      ? declarationNode
+      : declarationNode.initializer;
 
     if (ts.isBindingElement(declarationNode)) {
       initializer = declarationNode.parent.parent.initializer;
     }
 
-    initializer = initializer && value(initializer);
+    initializer = initializer && selectorValue(initializer);
     const tree = {
       label: declarationNode.name?.getText() || 'Selector',
       kind: 'Selector',
@@ -197,7 +303,7 @@ function inspectSelector(files, fileName, offset) {
     if (name === 'createFeatureSelector') {
       const key = literal(initializer.arguments[0]);
 
-      return { tree, paths: key ? [[key]] : [], supported: true };
+      return { tree, paths: key ? [[key]] : [], supported: true, exact: true };
     }
 
     if (!['createSelector', 'getSelectors'].includes(name)) {
@@ -209,12 +315,16 @@ function inspectSelector(files, fileName, offset) {
     }
 
     const args = [...initializer.arguments];
-    const projector = name === 'createSelector' ? args.pop() : undefined;
+    const projector = name === 'createSelector' ? value(args.pop()) : undefined;
     const inputs = args.flatMap((arg) =>
       ts.isArrayLiteralExpression(arg) ? [...arg.elements] : [arg],
     );
 
-    const traced = inputs.map((input) => trace(declaration(input), branch));
+    const traced = inputs.map((input) => {
+      input = unwrap(input);
+
+      return trace(declaration(ts.isCallExpression(input) ? input.expression : input), branch);
+    });
 
     tree.children.push(...traced.map((result) => result.tree));
     let paths = traced.flatMap((result) => result.paths);
@@ -234,6 +344,9 @@ function inspectSelector(files, fileName, offset) {
       }
     }
 
+    let exact =
+      name === 'getSelectors' && entitySelector !== 'selectAll' && entitySelector !== 'selectTotal';
+
     // A direct state projection narrows the reducer branch. Other projectors
     // conservatively retain all input branches.
     if (projector && ts.isArrowFunction(projector) && projector.parameters.length === 1) {
@@ -245,12 +358,16 @@ function inspectSelector(files, fileName, offset) {
         body = body.expression;
       }
 
-      if (body?.getText() === projector.parameters[0].name.getText()) {
+      if (
+        body?.getText() === projector.parameters[0].name.getText() &&
+        traced.every((result) => result.exact)
+      ) {
+        exact = true;
         paths = paths.map((path) => [...path, ...fields]);
       }
     }
 
-    return { tree, paths, supported: true };
+    return { tree, paths, supported: true, exact };
   }
 
   const result = trace(root);
@@ -464,6 +581,44 @@ function inspectSelector(files, fileName, offset) {
     }
   }
 
+  const usages = [];
+
+  for (const sourceFile of program.getSourceFiles()) {
+    walk(sourceFile, (node) => {
+      if (!ts.isIdentifier(node) || node === root.name || declaration(node) !== root) {
+        return;
+      }
+
+      let context = node;
+
+      for (let parent = node.parent; parent; parent = parent.parent) {
+        if (
+          ts.isImportDeclaration(parent) ||
+          ts.isExportDeclaration(parent) ||
+          ts.isTypeNode(parent)
+        ) {
+          return;
+        }
+
+        if (ts.isStatement(parent)) {
+          context = parent;
+          break;
+        }
+      }
+
+      const label = context.getText().replace(/\s+/g, ' ').trim();
+
+      usages.push({
+        label: label.length > 160 ? `${label.slice(0, 157)}...` : label,
+        kind: 'Usage',
+        ...location(node),
+        inspected: node === selected,
+      });
+    });
+  }
+
+  usages.sort((a, b) => a.fileName.localeCompare(b.fileName) || a.start - b.start);
+
   return {
     id: `${root.getSourceFile().fileName}:${root.getStart()}`,
     name: selected.text,
@@ -485,6 +640,7 @@ function inspectSelector(files, fileName, offset) {
               },
             ],
       },
+      { label: 'Used by', children: usages },
       {
         label:
           'Static analysis: shown blocks write selector dependencies. Output changes depend on runtime values. Unresolved writes and dynamic selectors may be missing.',
@@ -493,4 +649,4 @@ function inspectSelector(files, fileName, offset) {
   };
 }
 
-module.exports = { inspectSelector };
+module.exports = { inspectSelector, selectorProject };

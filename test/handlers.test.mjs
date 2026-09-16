@@ -117,7 +117,7 @@ describe('TypeScript reference integration', () => {
       ['auth.state.ts', 'Reducer', 'loginPageReducer'],
     ]) {
       const url = new URL(
-        `../../ngrx/projects/example-app/src/app/auth/store/${file}`,
+        `./fixtures/example-app/auth/store/${file}`,
         import.meta.url,
       );
 

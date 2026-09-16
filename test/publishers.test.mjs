@@ -65,7 +65,7 @@ describe('event publishers', () => {
   it('finds the book guard publisher', () => {
     const text = readFileSync(
       new URL(
-        '../../ngrx/projects/example-app/src/app/books/guards/book-exists.guard.ts',
+        './fixtures/example-app/books/guards/book-exists.guard.ts',
         import.meta.url,
       ),
       'utf8',
@@ -151,7 +151,7 @@ describe('event publishers', () => {
   it('finds the repository login success and failure emissions', () => {
     const text = readFileSync(
       new URL(
-        '../../ngrx/projects/example-app/src/app/auth/store/auth.effects.ts',
+        './fixtures/example-app/auth/store/auth.effects.ts',
         import.meta.url,
       ),
       'utf8',

@@ -317,7 +317,7 @@ class EventDetailsProvider {
     item.tooltip = `${item.label}\n${item.description}`;
     const icons = {
       Dispatch: ['broadcast', 'charts.blue'],
-      Effect: ['arrow-swap', 'charts.yellow'],
+      Effect: ['globe', 'charts.green'],
       Reducer: ['database', 'charts.purple'],
       Definition: ['symbol-method', 'charts.foreground'],
     };
@@ -361,7 +361,9 @@ async function navigate(provider, view, location) {
   const word = document.getWordRangeAtPosition(position);
 
   if (!word) {
-    await vscode.window.showInformationMessage('Place the cursor on an NgRx action or event name.');
+    await vscode.window.showInformationMessage(
+      'Not supported. Place the cursor on an NgRx selector or action.',
+    );
 
     return;
   }
@@ -387,6 +389,14 @@ async function navigate(provider, view, location) {
           return;
         }
 
+        if (!metadata.actionType && publishers.length === 0 && subscribers.length === 0) {
+          await vscode.window.showInformationMessage(
+            'Not supported. Place the cursor on an NgRx selector or action.',
+          );
+
+          return;
+        }
+
         const [publisherPaths, subscriberPaths] = await Promise.all([
           expandEventPaths(publishers, token),
           expandEventPaths(subscribers, token),
@@ -401,6 +411,7 @@ async function navigate(provider, view, location) {
           eventKey(metadata, document, word.start),
           metadata.actionType || eventName,
           provider.groups,
+          new vscode.Location(document.uri, word),
         );
         await vscode.commands.executeCommand('ngrxNavigator.eventDetails.focus');
       },
@@ -412,17 +423,29 @@ async function navigate(provider, view, location) {
   }
 }
 
-async function navigateSelector(view) {
+async function inspect(provider, view, location) {
   const editor = vscode.window.activeTextEditor;
 
-  if (!editor || !['typescript', 'typescriptreact'].includes(editor.document.languageId)) {
+  if (
+    !location &&
+    (!editor || !['typescript', 'typescriptreact'].includes(editor.document.languageId))
+  ) {
     return;
   }
 
-  const document = editor.document;
-  const word = document.getWordRangeAtPosition(editor.selection.active);
+  const document = location
+    ? await vscode.workspace.openTextDocument(location.uri)
+    : editor.document;
+
+  const word = document.getWordRangeAtPosition(
+    location ? location.range.start : editor.selection.active,
+  );
 
   if (!word) {
+    await vscode.window.showInformationMessage(
+      'Not supported. Place the cursor on an NgRx selector or action.',
+    );
+
     return;
   }
 
@@ -432,46 +455,80 @@ async function navigateSelector(view) {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Inspecting selector ${document.getText(word)}…`,
+        title: `Inspecting NgRx symbol ${document.getText(word)}…`,
         cancellable: true,
       },
       async (_progress, token) => {
+        // Known actions do not need the workspace-wide selector compiler.
+        const hovers = await vscode.commands.executeCommand(
+          'vscode.executeHoverProvider',
+          document.uri,
+          word.start,
+        );
+
+        if (token.isCancellationRequested || currentRequest !== requestId) {
+          return;
+        }
+
+        if (actionTypeFromHover((hovers || []).flatMap((hover) => hover.contents))) {
+          await navigate(provider, view, new vscode.Location(document.uri, word));
+
+          return;
+        }
+
+        const { inspectSelector, selectorProject } = require('./selectors');
+        const project = selectorProject(document.uri.fsPath);
         const uris = await vscode.workspace.findFiles(
-          '**/*.{ts,tsx}',
+          project.directory
+            ? new vscode.RelativePattern(project.directory, '**/*.{ts,tsx}')
+            : '**/*.{ts,tsx}',
           '**/{node_modules,dist,.git,coverage}/**',
         );
 
         const files = new Map();
         const documents = new Map();
 
-        for (const uri of uris) {
-          if (token.isCancellationRequested || currentRequest !== requestId) {
-            return;
+        // Bound concurrency to avoid flooding the extension host on large workspaces.
+        const pending = uris.filter((uri) => !isTestFile(uri.fsPath));
+        let next = 0;
+        const readDocuments = async () => {
+          while (next < pending.length) {
+            if (token.isCancellationRequested || currentRequest !== requestId) {
+              return;
+            }
+
+            const uri = pending[next++];
+            const target = await vscode.workspace.openTextDocument(uri);
+
+            documents.set(uri.fsPath, target);
           }
+        };
 
-          if (isTestFile(uri.fsPath)) {
-            continue;
-          }
+        await Promise.all(Array.from({ length: Math.min(8, pending.length) }, readDocuments));
 
-          const target = await vscode.workspace.openTextDocument(uri);
+        if (token.isCancellationRequested || currentRequest !== requestId) {
+          return;
+        }
 
-          files.set(uri.fsPath, target.getText());
-          documents.set(uri.fsPath, target);
+        for (const uri of pending) {
+          files.set(uri.fsPath, documents.get(uri.fsPath).getText());
         }
 
         files.set(document.uri.fsPath, document.getText());
         documents.set(document.uri.fsPath, document);
-        const { inspectSelector } = require('./selectors');
-        const result = inspectSelector(files, document.uri.fsPath, document.offsetAt(word.start));
+        const result = inspectSelector(
+          files,
+          document.uri.fsPath,
+          document.offsetAt(word.start),
+          project.options,
+        );
 
         if (token.isCancellationRequested || currentRequest !== requestId) {
           return;
         }
 
         if (!result) {
-          await vscode.window.showInformationMessage(
-            'No supported NgRx selector found at the cursor.',
-          );
+          await navigate(provider, view, new vscode.Location(document.uri, word));
 
           return;
         }
@@ -496,7 +553,7 @@ async function navigateSelector(view) {
 
         view.update(
           `selector:${result.id}`,
-          `Selector: ${result.name}`,
+          result.name,
           result.groups.map(convert),
         );
         await vscode.commands.executeCommand('ngrxNavigator.eventDetails.focus');
@@ -504,14 +561,14 @@ async function navigateSelector(view) {
     );
   } catch (error) {
     await vscode.window.showErrorMessage(
-      `NgRx selector inspection failed: ${error instanceof Error ? error.message : String(error)}`,
+      `NgRx inspection failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
 
 function activate(context) {
   const provider = new EventDetailsProvider();
-  const view = new InspectorView((location) => navigate(provider, view, location));
+  const view = new InspectorView((location) => inspect(provider, view, location));
 
   context.subscriptions.push(
     provider,
@@ -519,16 +576,17 @@ function activate(context) {
     vscode.window.registerWebviewViewProvider('ngrxNavigator.eventDetails', view, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.commands.registerCommand('ngrxNavigator.details', () => navigate(provider, view)),
-    vscode.commands.registerCommand('ngrxNavigator.inspectSelector', () => navigateSelector(view)),
+    vscode.commands.registerCommand('ngrxNavigator.details', () => inspect(provider, view)),
+    vscode.commands.registerCommand('ngrxNavigator.inspectSelector', () => inspect(provider, view)),
     // Preserve existing custom shortcuts without adding duplicate menu entries.
-    vscode.commands.registerCommand('ngrxNavigator.subscribers', () => navigate(provider, view)),
-    vscode.commands.registerCommand('ngrxNavigator.publishers', () => navigate(provider, view)),
+    vscode.commands.registerCommand('ngrxNavigator.subscribers', () => inspect(provider, view)),
+    vscode.commands.registerCommand('ngrxNavigator.publishers', () => inspect(provider, view)),
   );
 }
 
 module.exports = {
   activate,
+  inspect,
   findEventReferences,
   findEventMetadata,
   expandEventPaths,

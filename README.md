@@ -1,89 +1,121 @@
-# NgRx Navigator
+# NgRx Inspector
 
-NgRx Navigator shows the publishers and subscribers of an NgRx action or event in a single VS Code panel with expandable **Publishers** and **Subscribers** groups.
+NgRx Inspector traces relationships between NgRx actions, effects, reducers, and selectors directly in VS Code. Related source locations appear in one panel, with separate tabs for each inspected action or selector.
 
-| Editor command           | Windows / Linux        | macOS                        |
-| ------------------------ | ---------------------- | ---------------------------- |
-| **Inspect Action/Event** | `Ctrl+Alt+N`, then `D` | `Control+Option+N`, then `D` |
+## Exploring the store
 
-The shortcuts are chords: the first combination is released before the final letter. They apply only while a TypeScript or TSX editor has focus. Bindings are customizable in **Keyboard Shortcuts**; other extensions or operating system bindings may conflict.
+- **Action inspection** - Action dispatch sites and the effects and reducers that handle each action.
+- **Effect output navigation** - Recognized output actions and their subscribers.
+- **Selector trees** - Selector inputs, including shared dependencies across branches.
+- **State dependencies** - State paths used by a selector and supported reducer blocks that write those paths.
+- **Source navigation** - Links from results to the corresponding files and source ranges.
+- **Inspection tabs** - Multiple inspections with expansion and scroll position preserved while switching tabs.
 
-## Installing or updating
+Analysis runs locally without executing application code or sending source code to a service. NgRx Inspector is an independent extension, not an official NgRx release.
 
-The extension ID is `local-ngrx-tools.ngrx-navigator`. Existing installations of `local-ngrx-tools.ngrx-event-handlers` should be uninstalled or disabled to avoid duplicate commands and panels. **Extensions > … > Install from VSIX…** accepts the generated `ngrx-navigator-<version>.vsix` package. For version 0.7.14, installation from this project directory uses:
+## Getting started
 
-```sh
-code --install-extension ./ngrx-navigator-0.7.14.vsix
+A trusted workspace, VS Code 1.96 or later, and the built-in **TypeScript and JavaScript Language Features** extension are required. Action navigation relies on TypeScript reference resolution in the workspace.
+
+With the cursor on an action or selector in a TypeScript or TSX file, **Inspect NgRx** is available from the editor context menu, the Command Palette, or the keyboard shortcut below. Results open in the **NgRx Inspector** bottom panel. Unsupported symbols show a notification.
+
+| Command          | Windows / Linux        | macOS                         |
+| ---------------- | ---------------------- | ----------------------------- |
+| **Inspect NgRx** | `Ctrl+Alt+N`, then `I` | `Control+Command+N`, then `I` |
+
+The shortcut is a chord: the first combination is released before the final letter. It applies while a TypeScript or TSX editor has focus and can be customized through **Keyboard Shortcuts**.
+
+## Inspecting actions
+
+For a dispatch such as the following, inspecting `CollectionPageActions.enter` shows where the action is published and handled:
+
+```ts
+this.store.dispatch(CollectionPageActions.enter());
 ```
 
-VS Code may offer **Reload Window** after installation. Existing custom shortcuts targeting `ngrxNavigator.publishers` or `ngrxNavigator.subscribers` open the combined panel.
+![Editor context menu with Inspect NgRx highlighted](images/2026-09-16T03:45:05.848Z.png)
 
-This is a local extension, not an official NgRx release or Marketplace publication.
+The action inspection shows the dispatch site, subscribers, and recognized actions emitted by effects:
 
-## Navigating subscribers and publishers
+![Action inspection for Collection Page Enter, showing its publisher, effect outputs, and reducers](images/2026-09-16T04:14:45.280Z.png)
 
-With the cursor on the event member, such as `login` in `LoginPageEvents.login`, the editor context menu, Command Palette, and shortcut open the **NgRx Navigator** bottom panel. Each group shows its result count, including an explicit empty state. Results show the handler kind, name, file, and line; selecting a result opens and highlights its source. The context menu command is **Inspect Action/Event**. Each distinct event opens a separate, closable tab. Inspecting an already-open event selects and refreshes its existing tab. Tabs preserve expanded sections and scroll position while switching between events; closing the active tab selects a neighboring tab. Tabs last for the current extension session. Results are a snapshot and do not automatically refresh after edits.
+The panel shows:
 
-Subscribers include `ofType(LoginPageEvents.login)` in effects and `on(LoginPageEvents.login, ...)` in reducers. Publishers include `store.dispatch(LoginPageEvents.login(...))` and recognized outputs of dispatching effects.
+- **Definition** - The action definition when it can be resolved. This example shows **Unavailable** for the action created with `createActionGroup`.
+- **Publishers** - Dispatch sites, such as `ngOnInit` in the collection page.
+- **Subscribers** - Effects and reducers that handle the action.
+- **Effect outputs** - Recognized actions emitted by an effect, with expandable subscriber branches. Here, `loadBooksSuccess` leads to two reducers, while `loadBooksFailure` has no supported subscribers.
 
-The panel begins with the event's **Type** and **Definition**. For `LoginPageEvents.login`, the type is `[Login Page] Login`; selecting **Definition** opens its declaration in `auth.events.ts`. Definition locations come from TypeScript navigation, and literal action types come from its hover signature. An unresolved or widened type displays **Unavailable** instead of an inferred label.
+A click on a source row opens and highlights its code. Effect branches expose recognized output actions and their subscribers; a double-click on an output action opens its own inspection tab.
 
-Tests are excluded by default. The **Include Tests** setting retains its existing key, `ngrxHandlers.includeTests`, so upgrade settings remain intact.
+Action types come from TypeScript hover information. An unresolved or widened type displays **Unavailable**.
 
-## Supported analysis
+## Inspecting selectors
 
-Navigation begins with the TypeScript reference provider, then inspects syntax and local bindings. Events with the same name are not combined merely because their spelling matches. Unsaved documents are analyzed directly.
+The panel shows:
 
-Subscriber patterns:
+- **Selector tree** - The inspected selector and its inputs, including shared dependencies across branches.
+- **State dependencies** - Resolved state paths read by the selector, such as `books.search.ids`.
+- **Directly affecting reducer blocks** - Supported reducer blocks that write those state paths. These writes do not guarantee a change in the selector's output.
+- **Used by** - Source locations that reference the selector, such as other selectors or `store.select` calls.
 
-- `ofType` imported from `@ngrx/effects`, including multiple events and functional or class effects.
-- `on` imported from `@ngrx/store`, including multiple events per reducer registration.
-- Renamed and namespace imports of these APIs, with locally shadowed names excluded.
+### Tracing selector inputs
 
-Publisher patterns:
+`selectSearchBookIds` reads search IDs through `selectSearchState`:
 
-- `dispatch` on a receiver identified as an NgRx `Store` through a type annotation or Angular `inject(Store)`, including constructor injection and local aliases.
-- Direct action calls, conditional branches, local constant action values, and callbacks passed to `Store.dispatch`.
-- Events passed through an RxJS pipeline into `tap(action => store.dispatch(action))`, including local constant aliases of the callback parameter. Only operators preceding the dispatch are traced.
-- Outputs returned from `createEffect`, with dispatch enabled or omitted. Literal configurations and local constant configurations are recognized.
-- Common RxJS output paths: `map`, `mapTo`, `switchMap`, `mergeMap`, `concatMap`, `exhaustMap`, `catchError`, `of`, `from` with arrays, `defer`, `merge`, `concat`, `race`, `startWith`, and `endWith`.
-- Value-preserving operators such as `tap`, `filter`, `take`, `delay`, and `shareReplay`.
+```ts
+export const selectSearchBookIds = createSelector(selectSearchState, fromSearch.getIds);
+```
 
-An action call inside `tap`, an unused action value, or a value replaced by a later `map` is excluded. Effects configured with `dispatch: false` do not publish their returned values; explicit `Store.dispatch` calls inside them still count.
+![selectSearchBookIds inspection showing its input tree, books.search.ids dependency, reducer blocks, and usage](images/2026-09-16T04:19:42.781Z.png)
 
-## Limits
+The tree traces the selector back to `selectBooksState`. The state dependency is `books.search.ids`, with two reducer blocks shown as writing that path.
 
-The workspace must be trusted and the built-in TypeScript language features extension enabled. Relevant files must be visible to its project service. If TypeScript is still loading, navigation can be retried once ordinary reference search works.
+### Inspecting selector factories
 
-Results identify static source locations, not runtime registration, subscription, or reachability. Publisher analysis is conservative: custom operators, helper functions, mutable action variables, cross-file value flow, dynamic effect configurations, result selectors, and unknown transformations can yield missing results. Event creator aliases, re-exported NgRx APIs, string action types, legacy reducer switches, subscriber action arrays/spreads, and Signal Store event APIs are not supported. The event member itself must be selected rather than its containing group.
+`selectBookById` takes an ID and returns a selector for the corresponding book:
 
-All analysis runs locally. The extension does not execute application code or send source code to a service.
+```ts
+export const selectBookById = (id: string) =>
+  createSelector(selectBookEntities, (entities) => entities[id]);
+```
+
+![selectBookById factory inspection showing the books.books.entities dependency and related reducer blocks](images/2026-09-16T04:20:48.783Z.png)
+
+The inspection follows the returned selector through `selectBookEntities` and identifies `books.books.entities` as its state dependency.
+
+### Tracing shared dependencies
+
+`selectSelectedBook` combines book entities with the selected book ID:
+
+```ts
+export const selectSelectedBook = createSelector(
+  selectBookEntities,
+  selectSelectedBookId,
+  (entities, selectedId) => {
+    return selectedId && entities[selectedId];
+  },
+);
+```
+
+![selectSelectedBook inspection showing two input branches, shared dependencies, and three reducer blocks](images/2026-09-16T04:22:05.889Z.png)
+
+Both input branches pass through `selectBookEntitiesState`. The inspection lists two state dependencies, `books.books.entities` and `books.books.selectedBookId`, and three reducer blocks that write those paths.
+
+## Managing inspection tabs
+
+Each distinct action or selector opens a closable tab. Inspecting the same item again refreshes its existing tab. Results are snapshots; rerunning the command refreshes them after source edits. Tabs remain available for the current extension session.
+
+## Understanding analysis limits
+
+Results show static source relationships, not runtime behavior or guaranteed selector output changes. Dynamic code, custom abstractions, and unsupported NgRx patterns may produce incomplete results. Signal Store event APIs are not supported.
+
+If action results are missing while TypeScript loads, **Find All References** can help check language service readiness.
 
 ## Developing and testing
 
-From this directory:
+Build instructions and test commands are available in the [development guide](https://github.com/fredyang/ngrx-navigator/blob/main/developer.md).
 
-```sh
-npm install
-npm test
-npm run build
-npm run package
-```
+## Licensing
 
-The VSIX bundles its TypeScript parser. Unit tests cover subscribers, publishers, false-positive filtering, local shadowing, reference resolution through a barrel, and the example application's login events. Repository fixture tests require the NgRx checkout in the sibling `../ngrx` directory, matching the shared workspace layout.
-
-An isolated integration test exercises the built extension in the installed VS Code:
-
-```sh
-code --new-window --verbose \
-  --user-data-dir /tmp/ngrx-navigator-vscode-test \
-  --extensions-dir /tmp/ngrx-navigator-test-extensions \
-  --disable-workspace-trust \
-  --extensionDevelopmentPath="$PWD" \
-  --extensionTestsPath="$PWD/test/host.cjs" \
-  "$PWD/test/workspace"
-```
-
-Workspace trust is disabled only for this isolated test invocation. The success message starts with `NgRx Navigator integration passed`. The fixture uses local path mappings instead of global NgRx module declarations to avoid affecting the parent repository.
-
-The extension icon is rendered from `assets/icon.svg` to `assets/icon.png`. The monochrome panel icon is `assets/details.svg`; both depict a magnifying glass over the NgRx logo.
+NgRx Inspector is available under the [MIT license](https://github.com/fredyang/ngrx-navigator/blob/main/LICENSE). Copied example-app test fixtures retain their upstream license.
