@@ -121,55 +121,18 @@ type EventGroup<
 };
 
 /**
- * Creates an event factory with a shared source, unchanged camelCase keys, and
+ * Creates a group of events with a shared source, unchanged camelCase keys, and
  * readable action type labels.
  * Keys must start with a lowercase ASCII letter and contain only letters/digits.
  * Acronyms are preserved: loadHTTPError becomes "Load HTTP Error".
  * Supports props(), emptyProps(), and payload creator functions, like NgRx.
  * Explicitly type creator parameters, including parameters with default values.
  */
-export function createEventSource<const Source extends string>(
-  source: Source & StringLiteralCheck<Source, 'source'>
-): EventSource<Source> {
-  return {
-    createEventGroup: (events: Record<string, EventConfig>) =>
-      createEventGroupFromSource(source, events as any),
-    createEvent: (eventKey: string, eventConfig?: EventConfig) =>
-      eventConfig === undefined
-        ? createEvent(source, eventKey)
-        : createEvent(source, eventKey, eventConfig),
-  } as EventSource<Source>;
-}
-
-/** Creates a group of events with a shared source and unchanged camelCase keys. */
 export function createEventGroup<
   const Source extends string,
   Events extends Record<string, EventConfig>,
 >(
   source: Source & StringLiteralCheck<Source, 'source'>,
-  events: EventGroupConfig<Events>
-): EventGroup<Source, Events> {
-  return createEventGroupFromSource(source, events);
-}
-
-interface EventSource<Source extends string> {
-  createEventGroup<Events extends Record<string, EventConfig>>(
-    events: EventGroupConfig<Events>
-  ): EventGroup<Source, Events>;
-  createEvent<Key extends string>(
-    eventKey: Key & StringLiteralCheck<Key, 'event key'> & EventKeyCheck<Key>
-  ): ActionCreator<`[${Source}] ${EventLabel<Key>}`, () => Action>;
-  createEvent<Key extends string, Config extends EventConfig>(
-    eventKey: Key & StringLiteralCheck<Key, 'event key'> & EventKeyCheck<Key>,
-    eventConfig: Config & EventPropsCheck<Config>
-  ): EventCreator<Config, `[${Source}] ${EventLabel<Key>}`>;
-}
-
-function createEventGroupFromSource<
-  const Source extends string,
-  Events extends Record<string, EventConfig>,
->(
-  source: Source,
   events: EventGroupConfig<Events>
 ): EventGroup<Source, Events> {
   const entries = Object.entries(events);
@@ -182,30 +145,15 @@ function createEventGroupFromSource<
   ) as EventGroup<Source, Events>;
 }
 
-function createEvent<Source extends string, Key extends string>(
-  source: Source,
-  eventKey: Key
-): ActionCreator<`[${Source}] ${EventLabel<Key>}`, () => Action>;
-function createEvent<
-  Source extends string,
-  Key extends string,
-  Config extends EventConfig,
->(
-  source: Source,
-  eventKey: Key,
-  eventConfig: Config
-): EventCreator<Config, `[${Source}] ${EventLabel<Key>}`>;
 function createEvent(
   source: string,
   eventKey: string,
-  eventConfig?: EventConfig
+  eventConfig: EventConfig
 ) {
   validateEventKey(eventKey);
   const type = `[${source}] ${toEventLabel(eventKey)}`;
 
-  return eventConfig === undefined
-    ? createAction(type)
-    : createAction(type, eventConfig as any);
+  return createAction(type, eventConfig as any);
 }
 
 function validateEventKey(eventKey: string) {
