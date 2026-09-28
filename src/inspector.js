@@ -32,15 +32,25 @@ class InspectorView {
       }
 
       if (message.type === 'close') {
+        this.close([message.id]);
+      }
+
+      if (message.type === 'closeOthers' && this.tabs.has(message.id)) {
+        this.close([...this.tabs.keys()].filter((id) => id !== message.id));
+        this.active = message.id;
+      }
+
+      if (message.type === 'closeRight' && this.tabs.has(message.id)) {
         const ids = [...this.tabs.keys()];
-        const index = ids.indexOf(message.id);
 
-        this.tabs.delete(message.id);
+        this.close(ids.slice(ids.indexOf(message.id) + 1));
+      }
 
-        if (this.active === message.id) {
-          this.active = ids[index + 1] || ids[index - 1];
-        }
+      if (message.type === 'closeAll') {
+        this.close([...this.tabs.keys()]);
+      }
 
+      if (message.type.startsWith('close')) {
         this.send();
       }
 
@@ -138,6 +148,22 @@ class InspectorView {
     });
   }
 
+  close(ids) {
+    const tabs = [...this.tabs.keys()];
+    const activeIndex = tabs.indexOf(this.active);
+    const closing = new Set(ids);
+
+    for (const id of closing) {
+      this.tabs.delete(id);
+    }
+
+    if (closing.has(this.active)) {
+      const remaining = [...this.tabs.keys()];
+
+      this.active = remaining[activeIndex] || remaining[activeIndex - 1];
+    }
+  }
+
   dispose() {
     this.listener?.dispose();
   }
@@ -173,7 +199,12 @@ details[open] > summary::before { content:'▼'; }
 summary > .row { display:inline-block; margin-left:0; }
 .icon { display:inline-block; width:16px; height:16px; margin-right:6px; vertical-align:-3px; flex-shrink:0; } .Publisher { color:var(--vscode-charts-blue); } .Effect { color:var(--vscode-charts-green); } .Reducer { color:var(--vscode-charts-purple); }
 #empty { padding:16px; }
+#tab-menu { position:fixed; z-index:1; min-width:150px; padding:4px 0; background:var(--vscode-menu-background); border:1px solid var(--vscode-menu-border); box-shadow:0 2px 8px var(--vscode-widget-shadow); }
+#tab-menu button { display:block; width:100%; padding:5px 12px; text-align:left; }
+#tab-menu button:hover:not(:disabled) { background:var(--vscode-menu-selectionBackground); color:var(--vscode-menu-selectionForeground); }
+#tab-menu button:disabled { opacity:.5; cursor:default; }
 </style></head><body><div id="tabs" role="tablist" aria-label="Inspected events and selectors"></div><div id="panels"></div><p id="empty">Place the cursor on an NgRx event or selector and run Inspect NgRx.</p>
+<div id="tab-menu" role="menu" hidden><button data-action="close" role="menuitem">Close</button><button data-action="closeOthers" role="menuitem">Close Others</button><button data-action="closeRight" role="menuitem">Close to the Right</button><button data-action="closeAll" role="menuitem">Close All</button></div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const saved = vscode.getState() || {};
@@ -181,7 +212,24 @@ const states = saved.states || {};
 const selectorIconPath = 'M6 13H2V2h12v5M2 5h12M5 5v8M2 9h4M7 11s1.5-3 4-3 4 3 4 3-1.5 3-4 3-4-3-4-3ZM12 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0';
 const panels = new Map();
 let active;
+const tabMenu = document.getElementById('tab-menu');
 function persist() { vscode.setState({states}); }
+function hideTabMenu() { tabMenu.hidden = true; }
+function showTabMenu(event, id, index, count) {
+  event.preventDefault(); event.stopPropagation();
+  tabMenu.dataset.id = id;
+  tabMenu.style.left = event.clientX + 'px'; tabMenu.style.top = event.clientY + 'px';
+  tabMenu.querySelector('[data-action="closeOthers"]').disabled = count === 1;
+  tabMenu.querySelector('[data-action="closeRight"]').disabled = index === count - 1;
+  tabMenu.hidden = false;
+}
+tabMenu.onclick = (event) => {
+  const action = event.target.dataset.action;
+  if (!action || event.target.disabled) return;
+  vscode.postMessage({type:action, id:tabMenu.dataset.id}); hideTabMenu();
+};
+window.addEventListener('click', hideTabMenu);
+window.addEventListener('keydown', (event) => { if (event.key === 'Escape') hideTabMenu(); });
 function select(id) {
   active = id;
   for (const [key, panel] of panels) {
@@ -215,6 +263,7 @@ window.addEventListener('message', ({data}) => {
     icon.append(path); button.prepend(icon);
     button.id = 'tab-' + i; button.setAttribute('aria-controls','panel-' + i);
     button.onclick = () => { select(tab.id); vscode.postMessage({type:'select', id:tab.id}); };
+    wrapper.oncontextmenu = (event) => showTabMenu(event, tab.id, i, data.tabs.length);
     button.onkeydown = (event) => {
       let next;
       if (event.key === 'ArrowRight') next = (i + 1) % data.tabs.length;

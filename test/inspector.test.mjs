@@ -78,6 +78,26 @@ it('keeps prior inspections, reuses existing tabs, and selects a neighbor when c
   await receive({ type: 'close', id: 'success' });
   expect(inspector.active).toBeUndefined();
 });
+it('closes tab groups from the inspector tab context menu', async () => {
+  const { inspector, receive } = setup();
+
+  inspector.update('first', 'First', []);
+  inspector.update('second', 'Second', []);
+  inspector.update('third', 'Third', []);
+  await receive({ type: 'closeOthers', id: 'second' });
+  expect([...inspector.tabs.keys()]).toEqual(['second']);
+  expect(inspector.active).toBe('second');
+
+  inspector.update('third', 'Third', []);
+  inspector.update('fourth', 'Fourth', []);
+  await receive({ type: 'closeRight', id: 'third' });
+  expect([...inspector.tabs.keys()]).toEqual(['second', 'third']);
+  expect(inspector.active).toBe('third');
+
+  await receive({ type: 'closeAll' });
+  expect(inspector.tabs.size).toBe(0);
+  expect(inspector.active).toBeUndefined();
+});
 it('opens only source locations belonging to a live inspection', async () => {
   const { inspector, receive, vscode } = setup();
   const target = location('effect.ts', 19);
@@ -228,6 +248,11 @@ it('renders selector icons and marks only the inspected root while dependencies 
       dataset: {},
       attributes: {},
       classList: { toggle() {} },
+      style: {},
+      addEventListener() {},
+      querySelector() {
+        return { disabled: false };
+      },
       append(...children) {
         this.children.push(...children);
       },
@@ -251,7 +276,7 @@ it('renders selector icons and marks only the inspected root while dependencies 
   }
 
   const containers = Object.fromEntries(
-    ['tabs', 'panels', 'empty'].map((id) => [id, element('div')]),
+    ['tabs', 'panels', 'empty', 'tab-menu'].map((id) => [id, element('div')]),
   );
   let update;
   const postMessage = vi.fn();
@@ -263,8 +288,10 @@ it('renders selector icons and marks only the inspected root while dependencies 
       postMessage,
     }),
     window: {
-      addEventListener: (_, listener) => {
-        update = listener;
+      addEventListener: (type, listener) => {
+        if (type === 'message') {
+          update = listener;
+        }
       },
     },
     document: {
