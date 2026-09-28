@@ -102,6 +102,21 @@ export const selectSelectedBook = createSelector(
 
 Both input branches pass through `selectBookEntitiesState`. The inspection lists two state dependencies, `books.books.entities` and `books.books.selectedBookId`, and three reducer blocks that write those paths.
 
+## NgRx Sugar
+
+NgRx Inspector also recognizes `@ngrx-sugar/store`:
+
+- Inspect an event creator, including the event name before `.publish()`, to find
+  publish sites, fluent `state(...).on(...)` handlers, and `tasks()` listeners.
+- Follow recognized task output events, including success and failure branches.
+- Inspect generated `state.views` fields, derived `.withViews()` views, and
+  standalone `view()` selectors to trace state dependencies and fluent handlers.
+  Exported view aliases such as `booksViews = booksState.views` are supported.
+
+The same static-analysis limits apply. Dynamic factories and custom wrappers may
+be unresolved; task outputs with `{ dispatch: false }` are not treated as emitted
+NgRx actions.
+
 ## Managing inspection tabs
 
 Each distinct action or selector opens a closable tab. Inspecting the same item again refreshes its existing tab. Results are snapshots; rerunning the command refreshes them after source edits. Tabs remain available for the current extension session.

@@ -135,6 +135,18 @@ async function findEventReferences(document, position, token, direction = 'subsc
     for (const reference of referencesInFile) {
       const handler = classify(target.offsetAt(reference.range.start));
 
+      if (handler?.sugarPublish) {
+        const hovers = await vscode.commands.executeCommand(
+          'vscode.executeHoverProvider',
+          target.uri,
+          reference.range.start,
+        );
+
+        if (!actionTypeFromHover((hovers || []).flatMap((hover) => hover.contents))) {
+          continue;
+        }
+      }
+
       if (!handler) {
         continue;
       }
@@ -551,11 +563,7 @@ async function inspect(provider, view, location) {
           return converted;
         };
 
-        view.update(
-          `selector:${result.id}`,
-          result.name,
-          result.groups.map(convert),
-        );
+        view.update(`selector:${result.id}`, result.name, result.groups.map(convert));
         await vscode.commands.executeCommand('ngrxNavigator.eventDetails.focus');
       },
     );

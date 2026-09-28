@@ -197,7 +197,8 @@ it('reuses the compiler and invalidates it for edits, additions, and deletions',
 
   vm.runInNewContext(readFileSync(new URL('../src/selectors.js', import.meta.url), 'utf8'), {
     module,
-    require: () => ({ ...ts, createProgram }),
+    require: (name) =>
+      name === 'typescript' ? { ...ts, createProgram } : require('../src/' + name),
   });
   const inspect = module.exports.inspectSelector;
   const files = new Map([

@@ -2,7 +2,7 @@
   "name": "ngrx-inspector",
   "displayName": "NgRx Inspector",
   "description": "Inspect NgRx events, selector dependencies, and reducers in separate tabs.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "fredyang",
   "license": "MIT",
   "repository": {

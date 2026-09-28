@@ -4,6 +4,7 @@ const output = path.join(__dirname, 'dist');
 const typescript = path.dirname(require.resolve('typescript/package.json'));
 const manifestPath = path.join(__dirname, 'package.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
 console.log(`Building NgRx Inspector ${manifest.version}`);
 fs.mkdirSync(output, { recursive: true });
 fs.copyFileSync(path.join(__dirname, 'src/inspector.js'), path.join(output, 'inspector.js'));
@@ -26,5 +27,19 @@ fs.writeFileSync(
   path.join(output, 'selectors.js'),
   fs
     .readFileSync(path.join(__dirname, 'src/selectors.js'), 'utf8')
+    .replace("require('typescript')", "require('./typescript')"),
+);
+
+fs.writeFileSync(
+  path.join(output, 'sugar.js'),
+  fs
+    .readFileSync(path.join(__dirname, 'src/sugar.js'), 'utf8')
+    .replace("require('typescript')", "require('./typescript')"),
+);
+
+fs.writeFileSync(
+  path.join(output, 'sugar-views.js'),
+  fs
+    .readFileSync(path.join(__dirname, 'src/sugar-views.js'), 'utf8')
     .replace("require('typescript')", "require('./typescript')"),
 );

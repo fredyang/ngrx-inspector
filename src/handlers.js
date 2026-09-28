@@ -1,4 +1,5 @@
 const ts = require('typescript');
+const { sugarAnalysis } = require('./sugar');
 
 function unwrap(node) {
   while (
@@ -34,6 +35,8 @@ function createClassifier(fileName, text, direction = 'subscribers') {
 
   host.getSourceFile = (name) => (name === fileName ? source : undefined);
   const checker = ts.createProgram([fileName], options, host).getTypeChecker();
+
+  const sugar = sugarAnalysis(checker);
 
   function importedSymbol(expression) {
     expression = unwrap(expression);
@@ -112,7 +115,7 @@ function createClassifier(fileName, text, direction = 'subscribers') {
     for (let parent = node.parent; parent; parent = parent.parent) {
       if (
         ts.isCallExpression(parent) &&
-        isApi(parent.expression, '@ngrx/effects', 'createEffect')
+        (isApi(parent.expression, '@ngrx/effects', 'createEffect') || sugar.taskInfo(parent))
       ) {
         return parent.getStart(source);
       }
@@ -122,32 +125,51 @@ function createClassifier(fileName, text, direction = 'subscribers') {
   const registrations = [];
 
   if (direction === 'publishers') {
-    collectPublishers(source, checker, isApi, importedSymbol, (event, kind) => {
-      const token = ts.isPropertyAccessExpression(event) ? event.name : event;
+    collectPublishers(
+      source,
+      checker,
+      isApi,
+      importedSymbol,
+      sugar,
+      (event, kind, sugarPublish) => {
+        const token = ts.isPropertyAccessExpression(event) ? event.name : event;
 
-      if (!ts.isIdentifier(token)) {
-        return;
-      }
+        if (!ts.isIdentifier(token)) {
+          return;
+        }
 
-      registrations.push({
-        kind,
-        eventName: event.getText(source),
-        effectStart: effectScope(event),
-        name: label(event, kind),
-        start: token.getStart(source),
-        end: token.getEnd(),
-        registrationStart: token.getStart(source),
-        preview: event.parent.getText(source).replace(/\s+/g, ' ').slice(0, 180),
-      });
-    });
+        registrations.push({
+          kind,
+          sugarPublish,
+          eventName: event.getText(source),
+          effectStart: effectScope(event),
+          name: label(event, kind),
+          start: token.getStart(source),
+          end: token.getEnd(),
+          registrationStart: token.getStart(source),
+          preview: event.parent.getText(source).replace(/\s+/g, ' ').slice(0, 180),
+        });
+      },
+    );
   }
 
   function visit(node) {
     if (ts.isCallExpression(node)) {
-      const kind = importedApi(node.expression);
+      const task = sugar.taskInfo(node);
+      const chain = sugar.stateChain(node);
+      const sugarReducer =
+        chain?.steps.at(-1) === node &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'on';
+
+      const kind = task ? 'Effect' : sugarReducer ? 'Reducer' : importedApi(node.expression);
 
       if (kind) {
-        const args = kind === 'Reducer' ? node.arguments.slice(0, -1) : node.arguments;
+        const args = task
+          ? task.events
+          : kind === 'Reducer'
+            ? node.arguments.slice(0, -1)
+            : node.arguments;
 
         for (const argument of args) {
           const event = unwrap(argument);
@@ -162,11 +184,13 @@ function createClassifier(fileName, text, direction = 'subscribers') {
 
           registrations.push({
             kind,
-            effectStart: effectScope(node),
+            effectStart: task ? node.getStart(source) : effectScope(node),
             name: label(node, kind),
             start: token.getStart(source),
             end: token.getEnd(),
-            registrationStart: node.getStart(source),
+            registrationStart: sugarReducer
+              ? node.expression.name.getStart(source)
+              : node.getStart(source),
             preview: node.getText(source).replace(/\s+/g, ' ').slice(0, 180),
           });
         }
@@ -191,7 +215,7 @@ function createClassifier(fileName, text, direction = 'subscribers') {
 // Follow only recognizable output paths. Being inside createEffect is not
 // sufficient: tap callbacks, discarded values, and overwritten map outputs
 // must not be reported as publishers.
-function collectPublishers(source, checker, isApi, importedSymbol, add) {
+function collectPublishers(source, checker, isApi, importedSymbol, sugar, add) {
   function declaration(expression) {
     expression = unwrap(expression);
     const token = ts.isPropertyAccessExpression(expression) ? expression.name : expression;
@@ -390,11 +414,14 @@ function collectPublishers(source, checker, isApi, importedSymbol, add) {
       return expression.arguments.flatMap((arg) => observable(arg, depth + 1));
     }
 
-    if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'pipe') {
+    if (
+      !sugar.isTaskPipe(callee) &&
+      (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'pipe')
+    ) {
       return [];
     }
 
-    let outputs = observable(callee.expression, depth + 1);
+    let outputs = sugar.isTaskPipe(callee) ? [] : observable(callee.expression, depth + 1);
 
     for (const operator of expression.arguments.slice(0, operatorLimit)) {
       const op = constant(operator);
@@ -471,16 +498,29 @@ function collectPublishers(source, checker, isApi, importedSymbol, add) {
     }
 
     const operator = callback.parent;
+    let pipe;
 
-    if (
-      !ts.isCallExpression(operator) ||
-      rxName(operator.expression) !== 'tap' ||
-      operator.arguments[0] !== callback
-    ) {
+    const operatorName =
+      ts.isCallExpression(operator) && ts.isPropertyAccessExpression(operator.expression)
+        ? operator.expression.name.text
+        : undefined;
+
+    if (ts.isCallExpression(operator) && (rxName(operator.expression) === 'tap' || operatorName === 'tap')) {
+      if (operator.arguments[0] !== callback) {
+        return [];
+      }
+      pipe = operator.parent;
+    } else if (ts.isCallExpression(operator) && operatorName === 'subscribe') {
+      // A common container pattern derives an action in an RxJS pipeline and
+      // dispatches the emitted value in subscribe:
+      // source.pipe(map(() => Actions.select(...))).subscribe(action => store.dispatch(action)).
+      if (operator.arguments[0] !== callback) {
+        return [];
+      }
+      pipe = operator.expression.expression;
+    } else {
       return [];
     }
-
-    const pipe = operator.parent;
 
     if (
       !ts.isCallExpression(pipe) ||
@@ -513,15 +553,19 @@ function collectPublishers(source, checker, isApi, importedSymbol, add) {
 
     checkWrites(callback.body);
 
-    return written ? [] : observable(pipe, 0, pipe.arguments.indexOf(operator));
+    const limit = ts.isCallExpression(operator) && (rxName(operator.expression) === 'tap' || operatorName === 'tap')
+      ? pipe.arguments.indexOf(operator)
+      : pipe.arguments.length;
+
+    return written ? [] : observable(pipe, 0, limit);
   }
 
-  function dispatches(effect) {
-    if (!effect.arguments[1]) {
+  function dispatches(configNode) {
+    if (!configNode) {
       return true;
     }
 
-    const config = constant(effect.arguments[1]);
+    const config = constant(configNode);
 
     if (!ts.isObjectLiteralExpression(config)) {
       return false;
@@ -550,6 +594,20 @@ function collectPublishers(source, checker, isApi, importedSymbol, add) {
     if (ts.isCallExpression(node)) {
       const callee = unwrap(node.expression);
 
+      // Event identity is supplied by TypeScript references. The caller also
+      // checks the event's hover type before accepting a .publish() candidate.
+      if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'publish') {
+        add(unwrap(callee.expression), 'Dispatch', true);
+      }
+
+      const task = sugar.taskInfo(node);
+
+      if (task && dispatches(task.config)) {
+        for (const event of returned(task.callback).flatMap((arg) => observable(arg))) {
+          add(event, 'Effect');
+        }
+      }
+
       if (
         ts.isPropertyAccessExpression(callee) &&
         callee.name.text === 'dispatch' &&
@@ -565,7 +623,11 @@ function collectPublishers(source, checker, isApi, importedSymbol, add) {
         }
       }
 
-      if (isApi(callee, '@ngrx/effects', 'createEffect') && node.arguments[0] && dispatches(node)) {
+      if (
+        isApi(callee, '@ngrx/effects', 'createEffect') &&
+        node.arguments[0] &&
+        dispatches(node.arguments[1])
+      ) {
         for (const event of returned(node.arguments[0]).flatMap((arg) => observable(arg))) {
           add(event, 'Effect');
         }

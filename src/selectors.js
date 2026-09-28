@@ -1,4 +1,6 @@
 const ts = require('typescript');
+const { sugarAnalysis } = require('./sugar');
+const { sugarViews } = require('./sugar-views');
 
 // Keep only the latest workspace snapshot. Compare text, not Map identity, so
 // unsaved edits, additions, and deletions invalidate the compiler together.
@@ -71,6 +73,7 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
   const program = selectorProgram(files, compilerOptions);
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(fileName);
+  const sugar = sugarAnalysis(checker);
 
   if (!source) {
     return;
@@ -131,7 +134,11 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
   };
 
   const callName = (node) =>
-    ts.isCallExpression(node) ? node.expression.getText().split('.').pop() : '';
+    ts.isCallExpression(node)
+      ? sugar.isApi(node.expression, 'view')
+        ? 'createSelector'
+        : node.expression.getText().split('.').pop()
+      : '';
 
   // Follow factory returns without executing parameter-dependent code.
   const selectorValue = (node, seen = new Set()) => {
@@ -223,13 +230,14 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
     return;
   }
 
-  const root = declaration(selected);
+  const sugarSelectors = sugarViews(sugar, program.getSourceFiles());
+  const root = sugarSelectors.resolve(selected) || declaration(selected);
 
   if (!root) {
     return;
   }
 
-  const features = [];
+  const features = [...sugarSelectors.features];
 
   for (const sourceFile of program.getSourceFiles()) {
     walk(sourceFile, (node) => {
@@ -261,21 +269,27 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
     }
 
     const branch = new Set(ancestors).add(declarationNode);
-    let initializer = ts.isFunctionDeclaration(declarationNode)
-      ? declarationNode
-      : declarationNode.initializer;
+    const sugarView = declarationNode.sugarView;
+    let initializer =
+      !sugarView && ts.isFunctionDeclaration(declarationNode)
+        ? declarationNode
+        : declarationNode.initializer;
 
-    if (ts.isBindingElement(declarationNode)) {
+    if (!sugarView && ts.isBindingElement(declarationNode)) {
       initializer = declarationNode.parent.parent.initializer;
     }
 
     initializer = initializer && selectorValue(initializer);
     const tree = {
-      label: declarationNode.name?.getText() || 'Selector',
+      label: sugarView ? declarationNode.name : declarationNode.name?.getText() || 'Selector',
       kind: 'Selector',
-      ...location(declarationNode),
+      ...location(sugarView ? declarationNode.node : declarationNode),
       children: [],
     };
+
+    if (sugarView && declarationNode.paths) {
+      return { tree, paths: declarationNode.paths, supported: true, exact: true };
+    }
 
     if (!initializer) {
       tree.children.push({ label: 'Unsupported selector declaration' });
@@ -294,7 +308,7 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
       }
     }
 
-    if (ts.isBindingElement(declarationNode)) {
+    if (!sugarView && ts.isBindingElement(declarationNode)) {
       entitySelector = (declarationNode.propertyName || declarationNode.name).getText();
     }
 
@@ -323,7 +337,9 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
     const traced = inputs.map((input) => {
       input = unwrap(input);
 
-      return trace(declaration(ts.isCallExpression(input) ? input.expression : input), branch);
+      const target = ts.isCallExpression(input) ? input.expression : input;
+
+      return trace(sugarSelectors.resolve(target) || declaration(target), branch);
     });
 
     tree.children.push(...traced.map((result) => result.tree));
@@ -510,11 +526,17 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
 
     const branch = new Set(seen).add(node);
 
-    if (callName(node) === 'createReducer') {
-      const key = `${node.getSourceFile().fileName}:${node.getStart()}`;
+    const sugarChain = sugar.stateChain(node);
+
+    if (callName(node) === 'createReducer' || sugarChain) {
+      const anchor = sugarChain?.base || node;
+      const key = `${anchor.getSourceFile().fileName}:${anchor.getStart()}`;
       const declarationNode = declaration(expression);
-      const children = node.arguments
-        .slice(1)
+      const children = (
+        sugarChain
+          ? sugarChain.steps.filter((step) => step.expression.name.text === 'on')
+          : node.arguments.slice(1)
+      )
         .map((argument) => value(argument))
         .filter((handler) => handler && callName(handler) === 'on')
         .filter((handler) => affects(handler, path))
@@ -525,6 +547,9 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
             .join(', ')})`,
           kind: 'Reducer',
           ...location(handler),
+          // A fluent call's AST range includes every preceding chain step.
+          // Link just the current .on(...) block.
+          ...(sugarChain ? { start: handler.expression.name.getStart() } : {}),
         }));
 
       if (!children.length) {
@@ -534,7 +559,10 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
       const previous = reducers.get(key)?.children || [];
 
       reducers.set(key, {
-        label: declarationNode?.name?.getText() || 'Reducer',
+        label:
+          declarationNode?.name?.getText() ||
+          sugarSelectors.features.find((feature) => feature.chain.base === anchor)?.label ||
+          'Reducer',
         kind: 'Reducer',
         children: [
           ...new Map([...previous, ...children].map((child) => [child.start, child])).values(),
@@ -585,7 +613,21 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
 
   for (const sourceFile of program.getSourceFiles()) {
     walk(sourceFile, (node) => {
-      if (!ts.isIdentifier(node) || node === root.name || declaration(node) !== root) {
+      if (
+        !ts.isIdentifier(node) ||
+        node === root.name ||
+        node === root.node?.name ||
+        (root.sugarView ? sugarSelectors.resolve(node) !== root : declaration(node) !== root)
+      ) {
+        return;
+      }
+
+      if (
+        root.sugarView &&
+        ts.isPropertyAccessExpression(node.parent) &&
+        ['signal', 'observable'].includes(node.text) &&
+        node.parent.name === node
+      ) {
         return;
       }
 
@@ -620,8 +662,10 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
   usages.sort((a, b) => a.fileName.localeCompare(b.fileName) || a.start - b.start);
 
   return {
-    id: `${root.getSourceFile().fileName}:${root.getStart()}`,
-    name: selected.text,
+    id: root.sugarView
+      ? `${root.base.getSourceFile().fileName}:${root.base.getStart()}:${root.name}`
+      : `${root.getSourceFile().fileName}:${root.getStart()}`,
+    name: root.sugarView ? root.name : selected.text,
     groups: [
       { label: 'Selector tree', showCount: false, children: [result.tree] },
       {
