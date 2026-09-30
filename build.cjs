@@ -31,15 +31,15 @@ fs.writeFileSync(
 );
 
 fs.writeFileSync(
-  path.join(output, 'sugar.js'),
+  path.join(output, 'eventify.js'),
   fs
-    .readFileSync(path.join(__dirname, 'src/sugar.js'), 'utf8')
+    .readFileSync(path.join(__dirname, 'src/eventify.js'), 'utf8')
     .replace("require('typescript')", "require('./typescript')"),
 );
 
 fs.writeFileSync(
-  path.join(output, 'sugar-views.js'),
+  path.join(output, 'eventify-views.js'),
   fs
-    .readFileSync(path.join(__dirname, 'src/sugar-views.js'), 'utf8')
+    .readFileSync(path.join(__dirname, 'src/eventify-views.js'), 'utf8')
     .replace("require('typescript')", "require('./typescript')"),
 );

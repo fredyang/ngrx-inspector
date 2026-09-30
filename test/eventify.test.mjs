@@ -7,8 +7,8 @@ const { inspectSelector } = require('../src/selectors');
 
 it('recognizes fluent handlers and task subscriptions with alias and namespace imports', () => {
   const source = `
-    import { state as defineState, tasks as defineTasks } from '@ngrx-sugar/store';
-    import * as sugar from '@ngrx-sugar/store';
+    import { state as defineState, tasks as defineTasks } from '@ngrx-eventify/store';
+    import * as sugar from '@ngrx-eventify/store';
     const base = defineState('books', { loading: false });
     const books = base.on(Events.entered, s => ({...s, loading: true}))
       .on(Events.loaded, Events.failed, s => ({...s, loading: false}));
@@ -40,7 +40,7 @@ it('recognizes fluent handlers and task subscriptions with alias and namespace i
 
 it('follows task outputs, sources, renamed pipes, and dispatch:false without counting discarded values', () => {
   const source = `
-    import { tasks } from '@ngrx-sugar/store';
+    import { tasks } from '@ngrx-eventify/store';
     import { map, tap, switchMap, catchError, of } from 'rxjs';
     const jobs = tasks((when) => ({
       load: when(Events.entered, (flow) => flow(
@@ -80,7 +80,7 @@ it('follows task outputs, sources, renamed pipes, and dispatch:false without cou
 });
 
 const state = `
-  import { state as defineState, view as derive } from '@ngrx-sugar/store';
+  import { state as defineState, view as derive } from '@ngrx-eventify/store';
   const initial = { ids: [], selectedId: null, loading: false, nested: { title: '' } };
   export const books = defineState('books', initial)
     .on(Events.entered, s => ({ ...s, loading: true }))
@@ -193,7 +193,7 @@ it('recognizes Eventify event publishers, state handlers, and tasks', () => {
 
 it('composes standalone views with ordinary NgRx selectors and views from other features', () => {
   const source = `
-    import * as sugar from '@ngrx-sugar/store';
+    import * as sugar from '@ngrx-eventify/store';
     import { booksViews } from './state';
     const auth = sugar.state('auth', { user: null });
     const standard = createFeatureSelector('settings');
@@ -219,7 +219,7 @@ it('composes standalone views with ordinary NgRx selectors and views from other 
 });
 
 it('keeps generated view identities separate for two features sharing initial state', () => {
-  const source = `import { state } from '@ngrx-sugar/store'; const initial = { count: 0 };
+  const source = `import { state } from '@ngrx-eventify/store'; const initial = { count: 0 };
     const a = state('a', initial); const b = state('b', initial); a.views.count; b.views.count;`;
 
   const files = new Map([['/state.ts', source]]);
@@ -239,5 +239,13 @@ it('does not interpret unrelated state and view APIs as Sugar', () => {
   const files = new Map([['/state.ts', source]]);
 
   expect(inspectSelector(files, '/state.ts', source.lastIndexOf('derived'))).toBeUndefined();
+  expect(inspectSelector(files, '/state.ts', source.lastIndexOf('count'))).toBeUndefined();
+});
+
+it('does not recognize the retired NgRx Sugar package', () => {
+  const source = `import { state } from '@ngrx-sugar/store';
+    const books = state('books', { count: 0 }); books.views.count;`;
+  const files = new Map([['/state.ts', source]]);
+
   expect(inspectSelector(files, '/state.ts', source.lastIndexOf('count'))).toBeUndefined();
 });

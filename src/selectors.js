@@ -1,6 +1,6 @@
 const ts = require('typescript');
-const { sugarAnalysis } = require('./sugar');
-const { sugarViews } = require('./sugar-views');
+const { sugarAnalysis } = require('./eventify');
+const { sugarViews } = require('./eventify-views');
 
 // Keep only the latest workspace snapshot. Compare text, not Map identity, so
 // unsaved edits, additions, and deletions invalidate the compiler together.

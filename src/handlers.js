@@ -1,5 +1,5 @@
 const ts = require('typescript');
-const { sugarAnalysis } = require('./sugar');
+const { sugarAnalysis } = require('./eventify');
 
 function unwrap(node) {
   while (

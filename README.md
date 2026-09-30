@@ -102,9 +102,9 @@ export const selectSelectedBook = createSelector(
 
 Both input branches pass through `selectBookEntitiesState`. The inspection lists two state dependencies, `books.books.entities` and `books.books.selectedBookId`, and three reducer blocks that write those paths.
 
-## NgRx Sugar
+## NgRx Eventify
 
-NgRx Inspector also recognizes `@ngrx-sugar/store`:
+NgRx Inspector also recognizes `@ngrx-eventify/store`:
 
 - Inspect an event creator, including the event name before `.publish()`, to find
   publish sites, fluent `state(...).on(...)` handlers, and `tasks()` listeners.
