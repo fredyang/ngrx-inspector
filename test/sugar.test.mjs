@@ -145,6 +145,52 @@ it.each([
   );
 });
 
+it('traces Eventify views as selectors', () => {
+  const source = `
+    import { state, view } from '@ngrx-eventify/store';
+    const books = state('books', { ids: [] })
+      .on(Events.loaded, (current, { ids }) => ({ ...current, ids }))
+      .withViews(({ ids }) => ({ collection: view(ids, value => value) }));
+    books.views.collection.signal();
+  `;
+
+  const result = inspectSelector(
+    new Map([['/eventify.ts', source]]),
+    '/eventify.ts',
+    source.lastIndexOf('collection.signal') + 1,
+  );
+
+  expect(result.groups[1].children).toEqual([{ label: 'books.ids' }]);
+  expect(
+    result.groups[2].children.flatMap((group) => group.children).map((item) => item.label),
+  ).toEqual(['on(Events.loaded)']);
+});
+
+it('recognizes Eventify event publishers, state handlers, and tasks', () => {
+  const source = `
+    import { map } from 'rxjs';
+    import { state, tasks } from '@ngrx-eventify/store';
+    const books = state('books', { loaded: false })
+      .on(Events.loaded, current => ({ ...current, loaded: true }));
+    const jobs = tasks(on => ({
+      load: on(Events.entered, pipe => pipe(map(() => Events.loaded()))),
+    }));
+    Events.entered.publish();
+  `;
+
+  const subscribers = createClassifier('/eventify.ts', source).registrations;
+  const publishers = createClassifier('/eventify.ts', source, 'publishers').registrations;
+
+  expect(subscribers.map((entry) => [entry.kind, source.slice(entry.start, entry.end)])).toEqual([
+    ['Reducer', 'loaded'],
+    ['Effect', 'entered'],
+  ]);
+  expect(publishers.map((entry) => [entry.kind, entry.eventName])).toEqual([
+    ['Effect', 'Events.loaded'],
+    ['Dispatch', 'Events.entered'],
+  ]);
+});
+
 it('composes standalone views with ordinary NgRx selectors and views from other features', () => {
   const source = `
     import * as sugar from '@ngrx-sugar/store';

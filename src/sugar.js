@@ -1,4 +1,5 @@
 const ts = require('typescript');
+const storePackages = new Set(['@ngrx-sugar/store', '@ngrx-eventify/store']);
 
 function unwrap(node) {
   while (
@@ -67,14 +68,12 @@ function sugarAnalysis(checker) {
     if (decl && ts.isImportSpecifier(decl) && ts.isIdentifier(node)) {
       return (
         (decl.propertyName || decl.name).text === name &&
-        decl.parent.parent.parent.moduleSpecifier.text === '@ngrx-sugar/store'
+        storePackages.has(decl.parent.parent.parent.moduleSpecifier.text)
       );
     }
 
     if (decl && ts.isNamespaceImport(decl) && ts.isPropertyAccessExpression(node)) {
-      return (
-        node.name.text === name && decl.parent.parent.moduleSpecifier.text === '@ngrx-sugar/store'
-      );
+      return node.name.text === name && storePackages.has(decl.parent.parent.moduleSpecifier.text);
     }
 
     return false;
