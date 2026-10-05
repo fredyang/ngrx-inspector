@@ -38,6 +38,49 @@ it('recognizes fluent handlers and task subscriptions with alias and namespace i
   ).toBe(2);
 });
 
+it('recognizes named state handlers and task.handle collections', () => {
+  const source = `
+    import { state, task } from '@evst/store';
+    const books = state('books', { loading: false }).handle(on => ({
+      beginLoading: on(Events.entered, state => ({ ...state, loading: true })),
+      finishLoading: on(Events.loaded, Events.failed, state => ({ ...state, loading: false })),
+    }));
+    const jobs = task.handle(on => ({
+      load: on(Events.entered, pipe => pipe()),
+    }));
+  `;
+
+  const registrations = createClassifier('/state.ts', source).registrations;
+
+  expect(registrations.map((x) => [x.kind, x.name, source.slice(x.start, x.end)])).toEqual([
+    ['Reducer', 'beginLoading', 'entered'],
+    ['Reducer', 'finishLoading', 'loaded'],
+    ['Reducer', 'finishLoading', 'failed'],
+    ['Effect', 'load', 'entered'],
+  ]);
+});
+
+it('follows aliased and block-bodied EVST handler builders', () => {
+  const source = `
+    import { state, task } from '@evst/store';
+    const buildStateHandlers = on => {
+      const handlers = { begin: on(Events.entered, state => state) };
+      return { ...handlers, finish: on(Events.loaded, state => state) };
+    };
+    const books = state('books', {}).handle(buildStateHandlers);
+    const buildTasks = on => ({ load: on(Events.entered, pipe => pipe()) });
+    const jobs = task.handle(buildTasks);
+  `;
+
+  const registrations = createClassifier('/state.ts', source).registrations;
+
+  expect(registrations.map((x) => [x.kind, x.name, source.slice(x.start, x.end)])).toEqual([
+    ['Reducer', 'begin', 'entered'],
+    ['Reducer', 'finish', 'loaded'],
+    ['Effect', 'load', 'entered'],
+  ]);
+});
+
 it('follows task outputs, sources, renamed pipes, and dispatch:false without counting discarded values', () => {
   const source = `
     import { tasks } from '@evst/store';
@@ -155,12 +198,57 @@ it('traces EVST views as selectors', () => {
   `;
 
   const result = inspectSelector(
-    new Map([['/eventify.ts', source]]),
-    '/eventify.ts',
+    new Map([['/evst.ts', source]]),
+    '/evst.ts',
     source.lastIndexOf('collection.signal') + 1,
   );
 
   expect(result.groups[1].children).toEqual([{ label: 'books.ids' }]);
+  expect(
+    result.groups[2].children.flatMap((group) => group.children).map((item) => item.label),
+  ).toEqual(['on(Events.loaded)']);
+});
+
+it('traces extra EVST views and named state handlers', () => {
+  const source = `
+    import { state, view } from '@evst/store';
+    const books = state('books', { ids: [] })
+      .extraViews(({ ids }) => ({ collection: view(ids, value => value) }))
+      .handle(on => ({ storeBooks: on(Events.loaded, (current, { ids }) => ({ ...current, ids })) }));
+    books.views.collection.signal();
+  `;
+
+  const result = inspectSelector(
+    new Map([['/evst.ts', source]]),
+    '/evst.ts',
+    source.lastIndexOf('collection.signal') + 1,
+  );
+
+  expect(result.groups[1].children).toEqual([{ label: 'books.ids' }]);
+  expect(
+    result.groups[2].children.flatMap((group) => group.children).map((item) => item.label),
+  ).toEqual(['on(Events.loaded)']);
+});
+
+it('traces block-bodied and spread named state handlers', () => {
+  const source = `
+    import { state, view } from '@evst/store';
+    const buildHandlers = on => {
+      const handlers = { storeBooks: on(Events.loaded, (current, { ids }) => ({ ...current, ids })) };
+      return { ...handlers };
+    };
+    const books = state('books', { ids: [] })
+      .extraViews(({ ids }) => ({ collection: view(ids, value => value) }))
+      .handle(buildHandlers);
+    books.views.collection.signal();
+  `;
+
+  const result = inspectSelector(
+    new Map([['/evst.ts', source]]),
+    '/evst.ts',
+    source.lastIndexOf('collection.signal') + 1,
+  );
+
   expect(
     result.groups[2].children.flatMap((group) => group.children).map((item) => item.label),
   ).toEqual(['on(Events.loaded)']);
@@ -178,8 +266,8 @@ it('recognizes EVST event publishers, state handlers, and tasks', () => {
     Events.entered.publish();
   `;
 
-  const subscribers = createClassifier('/eventify.ts', source).registrations;
-  const publishers = createClassifier('/eventify.ts', source, 'publishers').registrations;
+  const subscribers = createClassifier('/evst.ts', source).registrations;
+  const publishers = createClassifier('/evst.ts', source, 'publishers').registrations;
 
   expect(subscribers.map((entry) => [entry.kind, source.slice(entry.start, entry.end)])).toEqual([
     ['Reducer', 'loaded'],

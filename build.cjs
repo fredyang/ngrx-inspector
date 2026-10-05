@@ -6,6 +6,7 @@ const manifestPath = path.join(__dirname, 'package.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
 console.log(`Building NgRx Inspector ${manifest.version}`);
+fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(output, { recursive: true });
 fs.copyFileSync(path.join(__dirname, 'src/inspector.js'), path.join(output, 'inspector.js'));
 fs.copyFileSync(path.join(__dirname, 'src/metadata.js'), path.join(output, 'metadata.js'));
@@ -31,15 +32,15 @@ fs.writeFileSync(
 );
 
 fs.writeFileSync(
-  path.join(output, 'eventify.js'),
+  path.join(output, 'evst.js'),
   fs
-    .readFileSync(path.join(__dirname, 'src/eventify.js'), 'utf8')
+    .readFileSync(path.join(__dirname, 'src/evst.js'), 'utf8')
     .replace("require('typescript')", "require('./typescript')"),
 );
 
 fs.writeFileSync(
-  path.join(output, 'eventify-views.js'),
+  path.join(output, 'evst-views.js'),
   fs
-    .readFileSync(path.join(__dirname, 'src/eventify-views.js'), 'utf8')
+    .readFileSync(path.join(__dirname, 'src/evst-views.js'), 'utf8')
     .replace("require('typescript')", "require('./typescript')"),
 );

@@ -117,7 +117,7 @@ function sugarViews(sugar, sourceFiles) {
     views = new Map(views);
 
     for (const step of chain.steps) {
-      if (step.expression.name.text !== 'withViews') {
+      if (!['extraViews', 'withViews'].includes(step.expression.name.text)) {
         continue;
       }
 

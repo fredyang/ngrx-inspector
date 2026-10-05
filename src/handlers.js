@@ -1,5 +1,5 @@
 const ts = require('typescript');
-const { sugarAnalysis } = require('./eventify');
+const { sugarAnalysis } = require('./evst');
 
 function unwrap(node) {
   while (
@@ -157,19 +157,26 @@ function createClassifier(fileName, text, direction = 'subscribers') {
     if (ts.isCallExpression(node)) {
       const task = sugar.taskInfo(node);
       const chain = sugar.stateChain(node);
+      const namedStateHandler = sugar.stateHandlerInfo(node);
       const sugarReducer =
         chain?.steps.at(-1) === node &&
         ts.isPropertyAccessExpression(node.expression) &&
         node.expression.name.text === 'on';
 
-      const kind = task ? 'Effect' : sugarReducer ? 'Reducer' : importedApi(node.expression);
+      const kind = task
+        ? 'Effect'
+        : sugarReducer || namedStateHandler
+          ? 'Reducer'
+          : importedApi(node.expression);
 
       if (kind) {
         const args = task
           ? task.events
-          : kind === 'Reducer'
-            ? node.arguments.slice(0, -1)
-            : node.arguments;
+          : namedStateHandler
+            ? namedStateHandler.events
+            : kind === 'Reducer'
+              ? node.arguments.slice(0, -1)
+              : node.arguments;
 
         for (const argument of args) {
           const event = unwrap(argument);
@@ -505,10 +512,14 @@ function collectPublishers(source, checker, isApi, importedSymbol, sugar, add) {
         ? operator.expression.name.text
         : undefined;
 
-    if (ts.isCallExpression(operator) && (rxName(operator.expression) === 'tap' || operatorName === 'tap')) {
+    if (
+      ts.isCallExpression(operator) &&
+      (rxName(operator.expression) === 'tap' || operatorName === 'tap')
+    ) {
       if (operator.arguments[0] !== callback) {
         return [];
       }
+
       pipe = operator.parent;
     } else if (ts.isCallExpression(operator) && operatorName === 'subscribe') {
       // A common container pattern derives an action in an RxJS pipeline and
@@ -517,6 +528,7 @@ function collectPublishers(source, checker, isApi, importedSymbol, sugar, add) {
       if (operator.arguments[0] !== callback) {
         return [];
       }
+
       pipe = operator.expression.expression;
     } else {
       return [];
@@ -553,9 +565,11 @@ function collectPublishers(source, checker, isApi, importedSymbol, sugar, add) {
 
     checkWrites(callback.body);
 
-    const limit = ts.isCallExpression(operator) && (rxName(operator.expression) === 'tap' || operatorName === 'tap')
-      ? pipe.arguments.indexOf(operator)
-      : pipe.arguments.length;
+    const limit =
+      ts.isCallExpression(operator) &&
+      (rxName(operator.expression) === 'tap' || operatorName === 'tap')
+        ? pipe.arguments.indexOf(operator)
+        : pipe.arguments.length;
 
     return written ? [] : observable(pipe, 0, limit);
   }

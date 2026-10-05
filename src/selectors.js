@@ -1,6 +1,6 @@
 const ts = require('typescript');
-const { sugarAnalysis } = require('./eventify');
-const { sugarViews } = require('./eventify-views');
+const { sugarAnalysis } = require('./evst');
+const { sugarViews } = require('./evst-views');
 
 // Keep only the latest workspace snapshot. Compare text, not Map identity, so
 // unsaved edits, additions, and deletions invalidate the compiler together.
@@ -533,9 +533,7 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
       const key = `${anchor.getSourceFile().fileName}:${anchor.getStart()}`;
       const declarationNode = declaration(expression);
       const children = (
-        sugarChain
-          ? sugarChain.steps.filter((step) => step.expression.name.text === 'on')
-          : node.arguments.slice(1)
+        sugarChain ? sugar.stateHandlers(sugarChain.steps) : node.arguments.slice(1)
       )
         .map((argument) => value(argument))
         .filter((handler) => handler && callName(handler) === 'on')
@@ -549,7 +547,13 @@ function inspectSelector(files, fileName, offset, compilerOptions = {}) {
           ...location(handler),
           // A fluent call's AST range includes every preceding chain step.
           // Link just the current .on(...) block.
-          ...(sugarChain ? { start: handler.expression.name.getStart() } : {}),
+          ...(sugarChain
+            ? {
+                start: ts.isPropertyAccessExpression(handler.expression)
+                  ? handler.expression.name.getStart()
+                  : handler.expression.getStart(),
+              }
+            : {}),
         }));
 
       if (!children.length) {

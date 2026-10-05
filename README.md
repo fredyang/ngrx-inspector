@@ -107,9 +107,10 @@ Both input branches pass through `selectBookEntitiesState`. The inspection lists
 NgRx Inspector also recognizes `@evst/store`:
 
 - Inspect an event creator, including the event name before `.publish()`, to find
-  publish sites, fluent `state(...).on(...)` handlers, and `tasks()` listeners.
+  publish sites, named `state(...).handle(...)` handlers, and `task.handle()`
+  listeners.
 - Follow recognized task output events, including success and failure branches.
-- Inspect generated `state.views` fields, derived `.withViews()` views, and
+- Inspect generated `state.views` fields, derived `.extraViews()` views, and
   standalone `view()` selectors to trace state dependencies and fluent handlers.
   Exported view aliases such as `booksViews = booksState.views` are supported.
 
