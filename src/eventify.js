@@ -1,5 +1,5 @@
 const ts = require('typescript');
-const storePackages = new Set(['@ngrx-eventify/store']);
+const storePackages = new Set(['@evst/store']);
 
 function unwrap(node) {
   while (
