@@ -114,6 +114,30 @@ NgRx Inspector also recognizes `@evst/store`:
   standalone `view()` selectors to trace state dependencies and fluent handlers.
   Exported view aliases such as `booksViews = booksState.views` are supported.
 
+### Naming EVST handlers
+
+The property key in a `state(...).handle()` or `task.handle()` definition is a
+descriptive label for that handler. It does not register an event name or change
+which events the handler receives. The event arguments passed to `on(...)`
+determine that relationship.
+
+```ts
+const booksState = state('books', initialState).handle((on) => ({
+  markBooksLoaded: on(fromBooksApi.loaded, (current, { books }) => ({
+    ...current,
+    books,
+  })),
+}));
+
+const booksTasks = task.handle((on) => ({
+  loadBooks: on(fromBooksPage.entered, (pipe) => pipe(/* operators */)),
+}));
+```
+
+Here, `markBooksLoaded` and `loadBooks` identify the handlers in source and in
+the inspector; `fromBooksApi.loaded` and `fromBooksPage.entered` are the
+events they handle.
+
 The same static-analysis limits apply. Dynamic factories and custom wrappers may
 be unresolved; task outputs with `{ dispatch: false }` are not treated as emitted
 NgRx actions.
