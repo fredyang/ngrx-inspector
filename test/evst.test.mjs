@@ -7,8 +7,8 @@ const { inspectSelector } = require('../src/selectors');
 
 it('recognizes fluent handlers and task subscriptions with alias and namespace imports', () => {
   const source = `
-    import { state as defineState, tasks as defineTasks } from '@evst/store';
-    import * as sugar from '@evst/store';
+    import { state as defineState, tasks as defineTasks } from '@evst/ngrx';
+    import * as sugar from '@evst/ngrx';
     const base = defineState('books', { loading: false });
     const books = base.on(Events.entered, s => ({...s, loading: true}))
       .on(Events.loaded, Events.failed, s => ({...s, loading: false}));
@@ -40,7 +40,7 @@ it('recognizes fluent handlers and task subscriptions with alias and namespace i
 
 it('recognizes named state handlers and task.handle collections', () => {
   const source = `
-    import { state, task } from '@evst/store';
+    import { state, task } from '@evst/ngrx';
     const books = state('books', { loading: false }).handle(on => ({
       beginLoading: on(Events.entered, state => ({ ...state, loading: true })),
       finishLoading: on(Events.loaded, Events.failed, state => ({ ...state, loading: false })),
@@ -62,7 +62,7 @@ it('recognizes named state handlers and task.handle collections', () => {
 
 it('follows aliased and block-bodied EVST handler builders', () => {
   const source = `
-    import { state, task } from '@evst/store';
+    import { state, task } from '@evst/ngrx';
     const buildStateHandlers = on => {
       const handlers = { begin: on(Events.entered, state => state) };
       return { ...handlers, finish: on(Events.loaded, state => state) };
@@ -83,7 +83,7 @@ it('follows aliased and block-bodied EVST handler builders', () => {
 
 it('follows task outputs, sources, renamed pipes, and dispatch:false without counting discarded values', () => {
   const source = `
-    import { tasks } from '@evst/store';
+    import { tasks } from '@evst/ngrx';
     import { map, tap, switchMap, catchError, of } from 'rxjs';
     const jobs = tasks((when) => ({
       load: when(Events.entered, (flow) => flow(
@@ -123,7 +123,7 @@ it('follows task outputs, sources, renamed pipes, and dispatch:false without cou
 });
 
 const state = `
-  import { state as defineState, view as derive } from '@evst/store';
+  import { state as defineState, view as derive } from '@evst/ngrx';
   const initial = { ids: [], selectedId: null, loading: false, nested: { title: '' } };
   export const books = defineState('books', initial)
     .on(Events.entered, s => ({ ...s, loading: true }))
@@ -190,7 +190,7 @@ it.each([
 
 it('traces EVST views as selectors', () => {
   const source = `
-    import { state, view } from '@evst/store';
+    import { state, view } from '@evst/ngrx';
     const books = state('books', { ids: [] })
       .on(Events.loaded, (current, { ids }) => ({ ...current, ids }))
       .withViews(({ ids }) => ({ collection: view(ids, value => value) }));
@@ -211,7 +211,7 @@ it('traces EVST views as selectors', () => {
 
 it('traces extra EVST views and named state handlers', () => {
   const source = `
-    import { state, view } from '@evst/store';
+    import { state, view } from '@evst/ngrx';
     const books = state('books', { ids: [] })
       .extraViews(({ ids }) => ({ collection: view(ids, value => value) }))
       .handle(on => ({ storeBooks: on(Events.loaded, (current, { ids }) => ({ ...current, ids })) }));
@@ -232,7 +232,7 @@ it('traces extra EVST views and named state handlers', () => {
 
 it('traces block-bodied and spread named state handlers', () => {
   const source = `
-    import { state, view } from '@evst/store';
+    import { state, view } from '@evst/ngrx';
     const buildHandlers = on => {
       const handlers = { storeBooks: on(Events.loaded, (current, { ids }) => ({ ...current, ids })) };
       return { ...handlers };
@@ -257,7 +257,7 @@ it('traces block-bodied and spread named state handlers', () => {
 it('recognizes EVST event publishers, state handlers, and tasks', () => {
   const source = `
     import { map } from 'rxjs';
-    import { state, tasks } from '@evst/store';
+    import { state, tasks } from '@evst/ngrx';
     const books = state('books', { loaded: false })
       .on(Events.loaded, current => ({ ...current, loaded: true }));
     const jobs = tasks(on => ({
@@ -281,7 +281,7 @@ it('recognizes EVST event publishers, state handlers, and tasks', () => {
 
 it('composes standalone views with ordinary NgRx selectors and views from other features', () => {
   const source = `
-    import * as sugar from '@evst/store';
+    import * as sugar from '@evst/ngrx';
     import { booksViews } from './state';
     const auth = sugar.state('auth', { user: null });
     const standard = createFeatureSelector('settings');
@@ -307,7 +307,7 @@ it('composes standalone views with ordinary NgRx selectors and views from other 
 });
 
 it('keeps generated view identities separate for two features sharing initial state', () => {
-  const source = `import { state } from '@evst/store'; const initial = { count: 0 };
+  const source = `import { state } from '@evst/ngrx'; const initial = { count: 0 };
     const a = state('a', initial); const b = state('b', initial); a.views.count; b.views.count;`;
 
   const files = new Map([['/state.ts', source]]);

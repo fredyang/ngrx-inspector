@@ -1,5 +1,5 @@
 const ts = require('typescript');
-const storePackages = new Set(['@evst/store']);
+const storePackages = new Set(['@evst/ngrx']);
 
 function unwrap(node) {
   while (

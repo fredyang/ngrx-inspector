@@ -104,7 +104,7 @@ Both input branches pass through `selectBookEntitiesState`. The inspection lists
 
 ## EVST
 
-NgRx Inspector also recognizes `@evst/store`:
+NgRx Inspector also recognizes `@evst/ngrx`:
 
 - Inspect an event creator, including the event name before `.publish()`, to find
   publish sites, named `state(...).handle(...)` handlers, and `task.handle()`
